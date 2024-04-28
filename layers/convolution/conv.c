@@ -19,12 +19,13 @@ typedef struct {
 } Array2D;
 
 // Conv2D layer
-typedef struct {
+typedef struct Conv2D {
   int C_in;
   int C_out;
   int kernel_size;
   float *weight; // (C_out, C_in, kernel_size, kernel_size)
   float *bias;   // (C_out, 1)
+  void (*forward)(struct Conv2D *layer, Array2D *input, float *output);
 } Conv2D;
 
 void gaussian(float *dest, uint size, double mean, double std) {
@@ -145,6 +146,8 @@ Conv2D *conv2d_init(int C_in, int C_out, int kernel_size) {
   gaussian(layer->weight, C_out * C_in * kernel_size * kernel_size, RAND_MEAN,
            RAND_STD);
   gaussian(layer->bias, C_out, RAND_MEAN, RAND_STD);
+
+  layer->forward = conv2d_forward;
   return layer;
 }
 
