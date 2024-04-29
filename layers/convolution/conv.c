@@ -79,7 +79,7 @@ void gaussian(float *dest, uint size, double mean, double std) {
 }
 
 Array1D *allocate_array1d(int batch_size, int channel, int seq_len) {
-  Array1D *arr = (Array1D *)malloc(sizeof(Array2D));
+  Array1D *arr = (Array1D *)malloc(sizeof(Array1D));
   arr->batch_size = batch_size;
   arr->seq_len = seq_len;
   arr->data = (float *)calloc(batch_size * channel * seq_len, sizeof(float));
