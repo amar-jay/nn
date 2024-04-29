@@ -51,7 +51,7 @@ void matmul_forward(float *out, float *inp, float *weight, float *bias, int B,
   // inp is (B,T,C), weight is (fan_out, fan_in), bias is (fan_out)
   // out will be (B,T,fan_out)
 
-#pragma omp parallel for collapse(BATCH_SIZE)
+#pragma omp parallel for collapse(2)
   for (int b = 0; b < B; b++) {
     for (int t = 0; t < T; t++) {
       float *out_bt = out + b * T * OC + t * OC;
