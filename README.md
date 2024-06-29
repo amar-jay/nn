@@ -13,7 +13,10 @@
 
 - [ ] Rotary Positional Encoding
 
-- [ ] BitNet - Quanitization
+- [ ] Quanitization
+- [ ] LoRA Finetuning
+- [ ] QLoRA
+- [ ] RL Finetuning
 
 - [ ] Attention
 - [ ] Decoder Transformer (GPT)
@@ -32,8 +35,8 @@
 - [ ] KV Cache
 - [ ] Parallelization
 
-- [ ] LORA
-- [ ] QLORA
+- [ ] Vision Transformer
+- [ ] UNet
 
 - [ ] Scaling laws - Theory
 
