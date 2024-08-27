@@ -1,3 +1,6 @@
 [submodule "optimizers"]
 	path = optimizers
 	url = https://github.com/amar-jay/optimizers
+[submodule "quantization/bitnet"]
+	path = quantization/bitnet
+	url = https://github.com/amar-jay/bitnet
