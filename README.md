@@ -1,4 +1,5 @@
 🤲🏽
+
 ```
 - [x] MLP
 - [x] Token Embedding
@@ -28,7 +29,7 @@
 - [ ] YOLO
 
 - [-] RNN
-- [-] GRU  
+- [-] GRU
 - [-] LSTM
 
 - [x] VAE
@@ -37,15 +38,15 @@
 
 - [ ] Mamba
 - [ ] KV Cache
-- [ ] Parallelization
+- [x] Parallelization
 
 - [ ] Vision Transformer
 - [ ] UNet
 
 - [ ] Scaling laws - Theory
 
-- [ ] Profiling
+- [x] Profiling
 
 - [ ] *karpathy/llama.c
-- [ ] *[black-forest-labs/flux](https://github.com/black-forest-labs/flux)
+- [ ] *black-forest-labs/flux
 ```
