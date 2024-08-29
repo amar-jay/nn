@@ -6,32 +6,32 @@
 - [x] Batch Normalization
 - [x] Layer Normalization
 
-- [ ] Logistic Regression - Theory
-- [ ] Gradient Descent/Autograd - Theory
+- [x] Logistic Regression - Theory
+- [x] Gradient Descent/Autograd - Theory
 
-- [ ] Byte Pair Encoding
+- [-] Byte Pair Encoding
 
 - [ ] Rotary Positional Encoding
 
 - [ ] Quanitization
-- [ ] LoRA Finetuning
-- [ ] QLoRA
+- [-] LoRA Finetuning
+- [-] QLoRA
 - [ ] RL Finetuning
 
-- [ ] Attention
-- [ ] Decoder Transformer (GPT)
-- [ ] Encoder Transformer (BERT - NER/Sentiment Analysis)
-- [ ] Full Transformer / Cross Attention
+- [x] Attention
+- [x] Decoder Transformer (GPT)
+- [x] Encoder Transformer (BERT - NER/Sentiment Analysis)
+- [-] Full Transformer / Cross Attention
 
-- [ ] Convolution / CNN
-- [ ] ResNet
+- [x] Convolution / CNN
+- [x] ResNet
 - [ ] YOLO
 
-- [ ] RNN
-- [ ] GRU  
-- [ ] LSTM
+- [-] RNN
+- [-] GRU  
+- [-] LSTM
 
-- [ ] VAE
+- [x] VAE
 - [ ] GAN
 - [ ] Diffusion Model
 
@@ -46,5 +46,6 @@
 
 - [ ] Profiling
 
-- [ ] *karpathy/llama.c 
+- [ ] *karpathy/llama.c
+- [ ] *[black-forest-labs/flux](https://github.com/black-forest-labs/flux)
 ```
