@@ -3,8 +3,8 @@
 - [x] MLP
 - [x] Token Embedding
 
-- [ ] Batch Normalization
-- [ ] Layer Normalization
+- [x] Batch Normalization
+- [x] Layer Normalization
 
 - [ ] Logistic Regression - Theory
 - [ ] Gradient Descent/Autograd - Theory
@@ -30,6 +30,10 @@
 - [ ] RNN
 - [ ] GRU  
 - [ ] LSTM
+
+- [ ] VAE
+- [ ] GAN
+- [ ] Diffusion Model
 
 - [ ] Mamba
 - [ ] KV Cache
