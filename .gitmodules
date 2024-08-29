@@ -4,3 +4,6 @@
 [submodule "quantization/bitnet"]
 	path = quantization/bitnet
 	url = https://github.com/amar-jay/bitnet
+[submodule "models/vae"]
+	path = models/vae
+	url = https://github.com/amar-jay/first-vae
