@@ -10,14 +10,16 @@
 - [x] Logistic Regression - Theory
 - [x] Gradient Descent/Autograd - Theory
 
-- [-] Byte Pair Encoding
+- [x] Byte Pair Encoding
 
-- [ ] Rotary Positional Encoding
+- [x] Rotary Positional Encoding
 
 - [ ] Quanitization
 - [-] LoRA Finetuning
 - [-] QLoRA
-- [ ] RL Finetuning
+
+- [ ] RLHF
+- [ ] DPO
 
 - [x] Attention
 - [x] Decoder Transformer (GPT)
@@ -46,7 +48,7 @@
 - [ ] Scaling laws - Theory
 
 - [x] Profiling
+- [x] Flash attention
 
-- [ ] *karpathy/llama.c
 - [ ] *black-forest-labs/flux
 ```
