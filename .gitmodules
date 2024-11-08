@@ -1,3 +1,6 @@
+[submodule "attention"]
+	path = attention
+	url = https://github.com/amar-jay/attention
 [submodule "optimizers"]
 	path = optimizers
 	url = https://github.com/amar-jay/optimizers
