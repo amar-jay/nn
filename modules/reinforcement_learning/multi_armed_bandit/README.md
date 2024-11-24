@@ -105,4 +105,8 @@
 | **Gradient Bandit**              | ❌         | Learns relative preferences  | Empirical                  | Good for non-stationary problems | Adapts to reward scaling      |
 | **Optimistic Initialization**    | ✅       | Natural exploration early on | Simple but effective       | May need tuning                  | Effective in early stages     |
 
+## Comparison
+ A parameter study of the various bandit algorithms presented in the RL book. Each point is the average reward obtained over 1000 steps with a particular algorithm at a particular setting of its parameter.
+![image](https://github.com/user-attachments/assets/31bd0eb9-7cdc-4214-9d24-a505dfb12fe2)
+
 
