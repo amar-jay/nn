@@ -1,6 +1,6 @@
 # Finite Markov Decision Processes
 
-### Difference betweeen MDPs and Bandit Problems
+## Difference betweeen MDPs and Bandit Problems
 
 MDPs are a classical formalization of sequential decision making, where actions influence not just immediate rewards, but also subsequent situations, or states, and through those future rewards. Thus MDPs involve delayed reward and the need to tradeoff immediate and delayed reward.
 
@@ -12,7 +12,7 @@ The learner and decision maker is called the **agent**. everything outside the a
 
 **_ AGENT - ENVIRONMENT IMAGE_**
 
-#### Expected Return
+## Expected Return
 
 In general, we seek to **maximize the expected return**, where the return, denoted $G_t$, is defined as some specific function of the reward sequence. In the simplest case the return is the sum of the rewards:
 
@@ -22,7 +22,7 @@ $$
 
 where T - final time step, where each interaction is called an _episode_.
 
-#### Discount Factor
+## Discount Factor
 
 Analogous to `time value of money` in finance, Expected return is discounted across time/state such that each return has a higher value than that of previous state. This concept is called _Discounting_.
 
@@ -37,7 +37,7 @@ $$
 G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1} = \frac{R_{t+1}}{1 - \gamma} 
 $$
 
-#### state-value function
+## value functions
 
 The value of a state s under a policy , denoted $v_\pi(s)$, is the expected return when starting in s and following $\pi$ thereafter. For MDPs, we can define $v_\pi(s)$ formally by
 
@@ -55,7 +55,7 @@ $$
 
 where $\mathbb{E}[\cdot]$ denotes the expected value of a random variable given that the agent follows policy $\pi$, and $t$ is any time step.
 
-##### Difference between state-value function and action-value function
+### Difference between state-value function and action-value function
 
 | -              | **State-Value Function (V(s))**          | **Action-Value Function (Q(s, a))**                            |
 | -------------- | ---------------------------------------- | -------------------------------------------------------------- |
