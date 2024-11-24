@@ -10,7 +10,7 @@ Whereas in bandit problems we estimated the value $q*(a)$ of each action $a$, in
 
 The learner and decision maker is called the **agent**. everything outside the agent, is called the **environment**.
 
-**_ AGENT - ENVIRONMENT IMAGE_**
+![image](https://github.com/user-attachments/assets/94dceaae-ca3e-4bf4-8638-4a1c84c410b8)
 
 ## Expected Return
 
