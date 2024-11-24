@@ -4,7 +4,7 @@
 
 ### Stategies
 
-- $\epsilon$-greedy strategy: works for stationary reward distribution (on addition of another parameter it affects the rewards distribution significantly)
+- **$\epsilon$-greedy strategy**: works for stationary reward distribution (on addition of another parameter it affects the rewards distribution significantly)
 
   ```python
   counts = zeros(no_of_arms) # counts is table of (action/arm, frequency)
@@ -23,7 +23,7 @@
       values[action] = ((n-1)/n) * values[action] + (1/n) * reward
   ```
 
-- UCB: Provides theoretical guarantees for regret minimization (this method chooses deter
+- **UCB**: Provides theoretical guarantees for regret minimization (this method chooses deter
   ministically but achieve exploration by subtly favoring at each step the actions that have so far received fewer samples)
 
   ```python
@@ -43,7 +43,7 @@
       values[action] = ((n-1)/n) * values[action] + (1/n) * reward
   ```
 
-- Gradient based algoriths (softmax distribution): Instead of estimating the value of actions, these algorithms focus on learning action preferences. Uses a softmax distribution to convert preferences into probabilities, favoring more preferred actions while still exploring less-preferred ones.
+- **Gradient based algoriths (softmax distribution):** Instead of estimating the value of actions, these algorithms focus on learning action preferences. Uses a softmax distribution to convert preferences into probabilities, favoring more preferred actions while still exploring less-preferred ones.
 
   ```python
   preferences = zeros(no_of_arms) # H(a) - a table of probabilities of each action
@@ -96,11 +96,13 @@
       values[action] = ((n-1)/n) * values[action] + (1/n) * reward
   ```
 
-### Summary
+## Summary
 
 | Method                           | **Approach** | **Exploration Mechanism**    | **Theoretical Foundation** | **Adaptation to Changes**        | **Additional Considerations** |
-| -------------------------------- | ------------ | ---------------------------- | -------------------------- | -------------------------------- | ----------------------------- |
-| **ε-Greedy**                     | simple       | Fixed exploration rate       | Limited                    | Poor in later stages             | Can be inefficient            |
-| **Upper Confidence Bound (UCB)** | intermediate | Decreases with more samples  | Theoretically well-founded | Good in stationary environments  | Optimal regret bound          |
-| **Gradient Bandit**              | hard         | Learns relative preferences  | Empirical                  | Good for non-stationary problems | Adapts to reward scaling      |
-| **Optimistic Initialization**    | simple       | Natural exploration early on | Simple but effective       | May need tuning                  | Effective in early stages     |
+| -------------------------------- | ------------- | ---------------------------- | -------------------------- | -------------------------------- | ----------------------------- |
+| **ε-Greedy**                     | ✅       | Fixed exploration rate       | Limited                    | Poor in later stages             | Can be inefficient            |
+| **Upper Confidence Bound (UCB)** | Deterministic | Decreases with more samples  | Theoretically well-founded | Good in stationary environments  | Optimal regret bound          |
+| **Gradient Bandit**              | ❌         | Learns relative preferences  | Empirical                  | Good for non-stationary problems | Adapts to reward scaling      |
+| **Optimistic Initialization**    | ✅       | Natural exploration early on | Simple but effective       | May need tuning                  | Effective in early stages     |
+
+
