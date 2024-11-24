@@ -59,11 +59,18 @@ where $\mathbb{E}[\cdot]$ denotes the expected value of a random variable given 
 | **Definition** | Expected return starting from state $s$. | Expected return starting from state $s$ and taking action $a$. |
 | **Input**      | State $s$.                               | State $s$ and action $a$.                                      |
 
-### Monte Carlo methods
+### Bellman Equations
 
 If an agent follows a policy and maintains an average, for each state (s) encountered, of the actual returns that have followed that state, then the average will converge to the state's value, $v(s)$, as the number of times that state is encountered approaches infinity.
 
 If separate averages are kept for each action $a$ taken in each state $s$, then these averages will similarly converge to the action values, $q(s, a)$.
 
 We call estimation methods of this kind **Monte Carlo methods** because they involve averaging over many random samples of actual returns.
+
+#### Bellman Equation
 ![image](https://github.com/user-attachments/assets/f3104189-0346-4ee0-b0bf-c9d19fa0320d)
+
+#### Bellman Optimality Equation 
+its basically the bellman equation considering the best action based on the which state has the maximum value. Though its known as Optimal-it works only in exploitation state because it has no notion of which state is best across the entire journey(ie just a step ahead)
+![image](https://github.com/user-attachments/assets/c73ea2ba-08bf-4e0a-86de-558dafd85560)
+
