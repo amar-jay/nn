@@ -47,5 +47,5 @@ where $\mathbb{E}[\cdot]$ denotes the expected value of a random variable given 
 
 | -              | **State-Value Function (V(s))**          | **Action-Value Function (Q(s, a))**                            |
 | -------------- | ---------------------------------------- | -------------------------------------------------------------- |
-| **Definition** | Expected return starting from state sss. | Expected return starting from state sss and taking action aaa. |
-| **Input**      | State sss.                               | State sss and action aaa.                                      |
+| **Definition** | Expected return starting from state $s$. | Expected return starting from state $s$ and taking action $a$. |
+| **Input**      | State $s$.                               | State $s$ and action $a$.                                      |
