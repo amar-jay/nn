@@ -26,14 +26,26 @@ where T - final time step, where each interaction is called an _episode_.
 
 Analogous to `time value of money` in finance, Expected return is discounted across time/state such that each return has a higher value than that of previous state. This concept is called _Discounting_.
 
-$$ G*t = R*{t+1} + \delta R*{t+2} + \delta^2 R*{t+3} + \cdots + \sum*{k=0}^{\infty} \delta^k R*{t+k+1} $$
-where $\delta$ is the discount factor, $0 < \delta < 1$, which represents the rate at which future rewards are discounted. This equation can be simplified using the formula for an infinite geometric series:
-$$ G*t = \sum*{k=0}^{\infty} \delta^k R*{t+k+1} = \frac{R*{t+1}}{1 - \delta} $$
+$$
+G_t = R_{t+1} + \gamma R_{t+2} + \gamma^2 R_{t+3} + \cdots + \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}
+$$
 
-#### state-value functino
+
+where $\gamma$ is the discount factor, $0 < \gamma < 1$, which represents the rate at which future rewards are discounted. This equation can be simplified using the formula for an infinite geometric series:
+
+$$ 
+G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1} = \frac{R_{t+1}}{1 - \gamma} 
+$$
+
+#### state-value function
 
 The value of a state s under a policy , denoted $v_\pi(s)$, is the expected return when starting in s and following $\pi$ thereafter. For MDPs, we can define $v_\pi(s)$ formally by
-$$ v(s) = \mathbb{E}[G_t | S_t = s] = \mathbb{E}\left[\sum_{k=0}^{\infty} \gamma^k R_{t+k+1} | S_t = s\right] \quad \text{for all } s \in S $$
+
+$$ 
+v(s) = \mathbb{E}[G_t | S_t = s] = \mathbb{E}\left[\sum_{k=0}^{\infty} \gamma^k R_{t+k+1} | S_t = s\right] \quad \text{for all } s \in S 
+$$
+
+
 
 For the action-value function, we define it as the expected return starting from state $s$, taking the action $a$, and thereafter following policy $\pi$:
 
