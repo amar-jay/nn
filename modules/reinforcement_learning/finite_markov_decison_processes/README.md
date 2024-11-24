@@ -30,22 +30,19 @@ $$
 G_t = R_{t+1} + \gamma R_{t+2} + \gamma^2 R_{t+3} + \cdots + \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}
 $$
 
-
 where $\gamma$ is the discount factor, $0 < \gamma < 1$, which represents the rate at which future rewards are discounted. This equation can be simplified using the formula for an infinite geometric series:
 
-$$ 
-G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1} = \frac{R_{t+1}}{1 - \gamma} 
+$$
+G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1} = \frac{R_{t+1}}{1 - \gamma}
 $$
 
 ## value functions
 
 The value of a state s under a policy , denoted $v_\pi(s)$, is the expected return when starting in s and following $\pi$ thereafter. For MDPs, we can define $v_\pi(s)$ formally by
 
-$$ 
-v(s) = \mathbb{E}[G_t | S_t = s] = \mathbb{E}\left[\sum_{k=0}^{\infty} \gamma^k R_{t+k+1} | S_t = s\right] \quad \text{for all } s \in S 
 $$
-
-
+v(s) = \mathbb{E}[G_t | S_t = s] = \mathbb{E}\left[\sum_{k=0}^{\infty} \gamma^k R_{t+k+1} | S_t = s\right] \quad \text{for all } s \in S
+$$
 
 For the action-value function, we define it as the expected return starting from state $s$, taking the action $a$, and thereafter following policy $\pi$:
 
@@ -61,3 +58,11 @@ where $\mathbb{E}[\cdot]$ denotes the expected value of a random variable given 
 | -------------- | ---------------------------------------- | -------------------------------------------------------------- |
 | **Definition** | Expected return starting from state $s$. | Expected return starting from state $s$ and taking action $a$. |
 | **Input**      | State $s$.                               | State $s$ and action $a$.                                      |
+
+### Monte Carlo methods
+
+If an agent follows a policy and maintains an average, for each state (s) encountered, of the actual returns that have followed that state, then the average will converge to the state's value, $v(s)$, as the number of times that state is encountered approaches infinity.
+
+If separate averages are kept for each action $a$ taken in each state $s$, then these averages will similarly converge to the action values, $q(s, a)$.
+
+We call estimation methods of this kind **Monte Carlo methods** because they involve averaging over many random samples of actual returns.
