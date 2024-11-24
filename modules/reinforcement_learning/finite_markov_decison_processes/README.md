@@ -62,6 +62,8 @@ where $\mathbb{E}[\cdot]$ denotes the expected value of a random variable given 
 ### Monte Carlo methods
 
 If an agent follows a policy and maintains an average, for each state (s) encountered, of the actual returns that have followed that state, then the average will converge to the state's value, $v(s)$, as the number of times that state is encountered approaches infinity.
+![image](https://github.com/user-attachments/assets/f3104189-0346-4ee0-b0bf-c9d19fa0320d)
+
 
 If separate averages are kept for each action $a$ taken in each state $s$, then these averages will similarly converge to the action values, $q(s, a)$.
 
