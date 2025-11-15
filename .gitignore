@@ -2,3 +2,4 @@ venv
 !.gitignore
 .*
 .ipynb_checkpoint
+data/*
