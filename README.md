@@ -14,41 +14,37 @@
 
 - [x] Rotary Positional Encoding
 
-- [ ] Quanitization
+- [x] Quanitization
 - [-] LoRA Finetuning
 - [-] QLoRA
-
-- [ ] RLHF
-- [ ] DPO
 
 - [x] Attention
 - [x] Decoder Transformer (GPT)
 - [x] Encoder Transformer (BERT - NER/Sentiment Analysis)
-- [-] Full Transformer / Cross Attention
+- [x] Full Transformer / Cross Attention
 
 - [x] Convolution / CNN
 - [x] ResNet
-- [ ] YOLO
+- [x] YOLO
 
-- [-] RNN
-- [-] GRU
-- [-] LSTM
+- [x] RNN
+- [x] GRU
+- [x] LSTM
 
 - [x] VAE
 - [ ] GAN
 - [ ] Diffusion Model
 
-- [ ] Mamba
 - [ ] KV Cache
 - [x] Parallelization
 
-- [ ] Vision Transformer
-- [ ] UNet
+- [x] Vision Transformer
+- [x] UNet
 
-- [ ] Scaling laws - Theory
+- [x] Scaling laws - Theory
 
 - [x] Profiling
 - [x] Flash attention
 
-- [ ] *black-forest-labs/flux
+- [ ] MOE
 ```
