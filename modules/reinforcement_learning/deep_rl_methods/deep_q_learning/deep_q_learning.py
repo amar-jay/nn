@@ -86,6 +86,7 @@ def train():
                 s_onehot  = I[s]
                 ns_onehot = I[ns]
 
+                # indexing the q_values with the actions taken
                 q_values = q_network(s_onehot).gather(1, a.unsqueeze(1)).squeeze(1)
 
                 with torch.no_grad():
