@@ -23,7 +23,7 @@ class ANet(nn.Module):
         self.mean = nn.Linear(128, action_dim)
         
         # std is fixed here
-        self.log_std = nn.Parameter(torch.ones(action_dim) * -1)
+        self.log_std = nn.Parameter(torch.ones(action_dim) * -1.)
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
@@ -54,7 +54,6 @@ def select_action(mean, std):
     # mean, std = actor(state)
     dist = torch.distributions.Normal(mean, std)
     action = dist.sample()
-    action = torch.clamp(action, -2.0, 2.0).detach()
     logprob = dist.log_prob(action).sum(axis=-1)
     return action.squeeze(0).detach().numpy(), logprob
 
@@ -81,9 +80,9 @@ def main():
         state, _ = env.reset()
         state = torch.FloatTensor(state).unsqueeze(0) # [1, C]
 
-        done = False
+        finished = False
         action = env.action_space.sample() # initial random action
-        while not done:
+        while not finished:
             # A state within Pendulum-v1 is represented by a 3-dimensional vector
             # 1. cos(theta): The cosine of the angle of the pendulum from the upright position.
             # 2. sin(theta): The sine of the angle of the pendulum from the
@@ -95,16 +94,18 @@ def main():
             # so in essence, the reward is higher when the pendulum is upright (theta close to 0) and when less torque is used (action close to 0).
             # The worst reward is -16.273604400000003 when the pendulum is hanging straight down and no action is taken.
             # And the optimal reward is 0 when the pendulum is perfectly upright and no action is taken.
-            next_state, reward, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
 
             # action selection 
             # sampling the next action is done discre
-            reward = torch.FloatTensor(np.array(reward)).unsqueeze(0) # [1, 1]
-            next_state = torch.FloatTensor(next_state).unsqueeze(0) # [1, C]
-            done = torch.FloatTensor([done]).unsqueeze(0) # [1, 1] float is best for calculations
             mean, std = actor_net(state)
             action, logprob = select_action(mean, std)
+
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            finished = terminated or truncated
+
+            reward = torch.FloatTensor(np.array(reward)).unsqueeze(0) # [1, 1]
+            next_state = torch.FloatTensor(next_state).unsqueeze(0) # [1, C]
+            done = torch.FloatTensor([finished]).unsqueeze(0) # [1, 1] float is best for calculations
 
             value_reward = value_net(state)
             value_next_reward = value_net(next_state)
@@ -132,10 +133,13 @@ def main():
             actor_optimizer.step()
             value_optimizer.step()
 
+            if finished:
+                break
+
             state = next_state
+
         if episode % 10 == 0:
             print(f"Episode {episode}, Reward: {reward.item():.2f}")
-
 
 
 main()
