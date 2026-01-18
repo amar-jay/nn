@@ -1,6 +1,13 @@
 """
 Unlike your manual script, you don't use torchrun from the command line. You simply run `python example_4.py`
 Lightning will see the devices=4 and strategy="ddp" flags and internally trigger the multi-process launch
+
+Using lighting greatly simplifies the code, by removing boilerplates, such as:
+- logging (it logs only on rank 0 and gives handlers to alternative loggers. by default it uses TensorBoard)
+- checkpointing (it saves only on rank 0 and gives handlers to alternative checkpointing strategies - early stopping, best k models, etc)
+- data loading (it automatically shards the data across processes)
+- distributed data parallel strategies is automatically handled (GLoo for CPUs, nccl for GPUs).
+- mixed precision training (you just set precision=16,"bf16","16-mixed","16-true",... and it handles the rest)
 """
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -86,7 +93,7 @@ if __name__ == "__main__":
         precision=32,
         accelerator="auto", 
         strategy="ddp",      # Uses 'gloo' for CPU and 'nccl' for GPU automatically
-        devices=1,           # Number of CPU processes (like nproc-per-node)
+        devices=8,           # Number of CPU processes (like nproc-per-node)
         max_epochs=10,  # The model will see the dataset 10 times
         log_every_n_steps=1,
         logger=wandb_logger,
