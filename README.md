@@ -42,6 +42,7 @@
 
 - [x] Vision Transformer
 - [x] UNet
+- [ ] VLA
 
 - [x] Scaling laws - Theory
 
