@@ -17,3 +17,6 @@
 [submodule "models/models/Wan2.2"]
 	path = models/models/Wan2.2
 	url = https://github.com/Wan-Video/Wan2.2
+[submodule "models/flux2"]
+	path = models/flux2
+	url = https://github.com/black-forest-labs/flux2
