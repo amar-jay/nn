@@ -1,5 +1,3 @@
-🤲🏽
-
 ```
 - [x] MLP
 - [x] Token Embedding
