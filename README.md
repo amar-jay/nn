@@ -22,6 +22,7 @@
 - [x] Decoder Transformer (GPT)
 - [x] Encoder Transformer (BERT - NER/Sentiment Analysis)
 - [x] Full Transformer / Cross Attention
+- [x] T5
 
 - [x] Convolution / CNN
 - [x] ResNet
@@ -34,17 +35,23 @@
 - [x] VAE
 - [ ] GAN
 - [ ] Diffusion Model
+- [x] Autoencoders
 
-- [ ] KV Cache
+- [x] KV Cache
 - [x] Parallelization
 
 - [x] Vision Transformer
 - [x] UNet
+- [ ] VLA
 
 - [x] Scaling laws - Theory
 
+- [x] Distributed Data Processing
 - [x] Profiling
 - [x] Flash attention
-
 - [ ] MOE
+
+- [x] karparthy/llama.c
+- [x] Flux
+- [ ] VGGT
 ```
