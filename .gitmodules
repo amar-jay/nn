@@ -9,13 +9,21 @@
 [submodule "modules/tokenization/byte_pair_encoding"]
 	path = modules/tokenization/byte_pair_encoding
 	url = https://github.com/amar-jay/trBPE
+	branch = main
 [submodule "models/vae"]
 	path = models/vae
 	url = https://github.com/amar-jay/first-vae
 	branch = main
+[submodule "models/dinov3"]
+  path = models/dinov3
+	url = https://github.com/facebookresearch/dinov3
+	branch = main
+[submodule "models/diffusion-forcing-transformer"]
+	path = models/diffusion-forcing-transformer
+  url = https://github.com/kwsong0113/diffusion-forcing-transformer
 [submodule "models/Wan2.2"]
-	path = models/Wan2.2
-	url = https://github.com/Wan-Video/Wan2.2
+	path = "models/Wan2.2"
+	url = "https://github.com/Wan-Video/Wan2.2"
 [submodule "models/flux2"]
 	path = models/flux2
 	url = https://github.com/black-forest-labs/flux2
