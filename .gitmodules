@@ -1,25 +1,21 @@
-[submodule "attention"]
-	path = attention
+[submodule "modules/layers/attention"]
+	path = modules/layers/attention
 	url = https://github.com/amar-jay/attention
 	branch = main
-[submodule "optimizers"]
-	path = optimizers
-	url = https://github.com/amar-jay/optimizers
-	branch = main
-[submodule "quantization/bitnet"]
-	path = quantization/bitnet
+[submodule "modules/quantization/bitnet"]
+	path = modules/quantization/bitnet
 	url = https://github.com/amar-jay/bitnet
 	branch = main
+[submodule "modules/tokenization/byte_pair_encoding"]
+	path = modules/tokenization/byte_pair_encoding
+	url = https://github.com/amar-jay/trBPE
 [submodule "models/vae"]
 	path = models/vae
 	url = https://github.com/amar-jay/first-vae
 	branch = main
-[submodule "models/models/Wan2.2"]
-	path = models/models/Wan2.2
+[submodule "models/Wan2.2"]
+	path = models/Wan2.2
 	url = https://github.com/Wan-Video/Wan2.2
 [submodule "models/flux2"]
 	path = models/flux2
 	url = https://github.com/black-forest-labs/flux2
-[submodule "modules/tokenization/byte_pair_encoding"]
-	path = modules/tokenization/byte_pair_encoding
-	url = https://github.com/amar-jay/trBPE
