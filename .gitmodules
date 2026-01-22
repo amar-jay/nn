@@ -20,6 +20,6 @@
 [submodule "models/flux2"]
 	path = models/flux2
 	url = https://github.com/black-forest-labs/flux2
-[submodule "tokenization/tokenization/byte_pair_encoding"]
-	path = tokenization/tokenization/byte_pair_encoding
+[submodule "modules/tokenization/byte_pair_encoding"]
+	path = modules/tokenization/byte_pair_encoding
 	url = https://github.com/amar-jay/trBPE
