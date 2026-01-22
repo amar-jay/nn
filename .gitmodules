@@ -27,3 +27,6 @@
 [submodule "models/flux2"]
 	path = models/flux2
 	url = https://github.com/black-forest-labs/flux2
+[submodule "modules/optimizers"]
+	path = modules/optimizers
+	url = https://github.com/amar-jay/optimizers
