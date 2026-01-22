@@ -1,5 +1,0 @@
-StochasticGradientDescent, 100.000,  1440,   1.825
-SGDWithMomentum     , 100.000,   300,   1.217
-SGDWithNestrov      ,  40.000,   180,   2.144
-RMSProp             ,  10.000,  4320,  32.861
-Adam                , 100.000,   180,   1.004
