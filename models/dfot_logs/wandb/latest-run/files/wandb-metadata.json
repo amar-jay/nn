@@ -1,0 +1,59 @@
+{
+  "os": "Linux-6.8.0-1007-gcp-x86_64-with-glibc2.39",
+  "python": "CPython 3.10.19",
+  "startedAt": "2026-01-17T19:58:10.263257Z",
+  "args": [
+    "+name=single_image_to_long",
+    "dataset=realestate10k_mini",
+    "algorithm=dfot_video_pose",
+    "experiment=video_generation",
+    "++algorithm={diffusion: {is_continuous: True, precond_scale: 0.125}, backbone: {use_fourier_noise_embedding: True}}",
+    "load=pretrained:DFoT_RE10K.ckpt",
+    "experiment.tasks=[validation]",
+    "experiment.validation.data.shuffle=True",
+    "dataset.context_length=1",
+    "dataset.frame_skip=1",
+    "dataset.n_frames=200",
+    "algorithm.tasks.prediction.keyframe_density=0.0625",
+    "algorithm.tasks.interpolation.max_batch_size=4",
+    "experiment.validation.batch_size=1",
+    "algorithm.tasks.prediction.history_guidance.name=stabilized_vanilla",
+    "+algorithm.tasks.prediction.history_guidance.guidance_scale=4.0",
+    "+algorithm.tasks.prediction.history_guidance.stabilization_level=0.02",
+    "algorithm.tasks.interpolation.history_guidance.name=vanilla",
+    "+algorithm.tasks.interpolation.history_guidance.guidance_scale=1.5"
+  ],
+  "program": "-m main",
+  "git": {
+    "remote": "https://github.com/kwsong0113/diffusion-forcing-transformer",
+    "commit": "530f8bf4db91a21964993f214fa4050dbd529591"
+  },
+  "email": "abdelmanan.abdelrahman03@gmail.com",
+  "root": "/teamspace/studios/this_studio/diffusion-forcing-transformer/outputs/2026-01-17/19-57-47",
+  "host": "cs-01kf6pvq5vys3e1mbs0fzwmpkv",
+  "executable": "/home/zeus/miniconda3/envs/cloudspace/bin/python",
+  "cpu_count": 6,
+  "cpu_count_logical": 12,
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "395184570368",
+      "used": "67192897536"
+    }
+  },
+  "memory": {
+    "total": "179360841728"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA A100-SXM4-80GB",
+      "memoryTotal": "85899345920",
+      "cudaCores": 6912,
+      "architecture": "Ampere",
+      "uuid": "GPU-1bc64397-a405-056a-b61a-5732f30e5af4"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "writerId": "hrq18lgb5yp1b4b8a1iahx9nha2bycbt"
+}
