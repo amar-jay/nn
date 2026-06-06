@@ -13,7 +13,7 @@
 - [x] Rotary Positional Encoding
 
 - [x] Quanitization
-- [-] LoRA Finetuning
+- [x] LoRA Finetuning
 - [-] QLoRA
 
 - [x] Attention
@@ -32,7 +32,8 @@
 
 - [x] VAE
 - [ ] GAN
-- [ ] Diffusion Model
+- [x] Diffusion Model
+- [x] Rectified Flow
 - [x] Autoencoders
 
 - [x] KV Cache
@@ -51,5 +52,5 @@
 
 - [x] karparthy/llama.c
 - [x] Flux
-- [ ] VGGT
+- [x] VGGT
 ```
