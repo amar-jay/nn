@@ -57,7 +57,7 @@ av==16.1.0
 torch-fidelity==0.3.0
 filelock==3.20.3
 tensorboard==2.20.0
-pillow==11.3.0
+pillow==12.3.0
 internetarchive==5.7.1
 annotated-types==0.7.0
 aiohttp==3.13.3
