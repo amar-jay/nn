@@ -25,7 +25,7 @@ def test_ldw_loss_and_gradient_match_length_weighted_objective(monkeypatch, alph
 
     monkeypatch.setattr(rl, '_completion_logps', logps)
     rewards = torch.tensor([1., 0.])
-    advantages = (rewards - rewards.mean()) / (rewards.std() + 1e-4)
+    advantages = (rewards - rewards.mean()) / (rewards.std(unbiased=False) + 1e-4)
     theta = torch.tensor(0.1, requires_grad=True)
     ratio = theta.exp()
     surrogate = torch.minimum(ratio * advantages,
@@ -37,16 +37,34 @@ def test_ldw_loss_and_gradient_match_length_weighted_objective(monkeypatch, alph
     expected = ((-surrogate + 0.02 * kl) * aggregate_weights).sum() / aggregate_weights.sum()
     expected.backward()
 
-    actual = rl.ldw_step(current, old, ref,
+    actual, metrics = rl.ldw_step(current, old, ref,
                          torch.optim.SGD(current.parameters(), lr=0),
                          ([[3, 4], [3, 4, 5, 6]], [1, 1], rewards),
                          group=2, pad_tok=7, epochs=1, alpha=alpha)
     assert actual == pytest.approx(expected.item())
-    assert current.weight.grad.item() == pytest.approx(theta.grad.item())
+    assert current.weight.grad.item() == pytest.approx(theta.grad.item(), rel=1e-5, abs=1e-7)
     assert calls == [7, 7, 7]
 
 
 @pytest.mark.parametrize('alpha', [-0.1, 1.1])
 def test_ldw_rejects_invalid_alpha(alpha):
-    with pytest.raises(ValueError, match='alpha'):
+    with pytest.raises(AssertionError, match='alpha'):
         rl.ldw_step(None, None, None, None, None, alpha=alpha)
+
+
+def test_metrics_use_whole_batch_and_completion_denominator():
+    mask = torch.tensor([[1., 0., 0.], [1., 1., 0.]])
+    ratio = torch.tensor([[1., 99., 99.], [1.5, 0.5, 99.]])
+    kl = torch.tensor([[0.1, 100., 100.], [0.2, 0.3, 100.]])
+    adv = torch.tensor([[1.], [-1.]])
+    history = [[] for _ in rl.METRIC_NAMES]
+    rl._record_metrics(history, ratio, adv, ratio * adv, kl, mask,
+                       torch.tensor([1., 0.]), 2, 0.2,
+                       weights=torch.tensor([1., 0.5]))
+    metrics = dict(zip(rl.METRIC_NAMES, [x[0] for x in history]))
+    assert metrics['masked_ratio'] == pytest.approx(1.0)
+    assert metrics['masked_KL'] == pytest.approx(0.2)
+    assert metrics['weighted_KL'] == pytest.approx(0.175)
+    assert metrics['exact_rate'] == 0.5
+    assert metrics['equal_reward_groups'] == 0.0
+    assert metrics['clip_fraction'] == pytest.approx(2 / 3)

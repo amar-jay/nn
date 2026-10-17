@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .countdown import generate_puzzle, reward, encode, decode, prompt_for, random_valid_expr, VOCAB, PAD, EOS
-from .rl import grpo_step
+from .rl import METRIC_NAMES, rl_step
 
 class Block(nn.Module):
     def __init__(self, d: int, heads: int):
@@ -114,6 +114,7 @@ def train(iters=300, prompts_per_iter=16, group=12, seed=0, n_numbers=2, sft_ste
     for p in ref_net.parameters():
         p.requires_grad_(False)
     opt = torch.optim.AdamW(net.parameters(), lr=3e-4)
+    metric_history = [[] for _ in METRIC_NAMES]
 
     for it in range(1, iters + 1):
         old_net = copy.deepcopy(net).eval()
@@ -127,7 +128,9 @@ def train(iters=300, prompts_per_iter=16, group=12, seed=0, n_numbers=2, sft_ste
                 plens.append(len(pids))
                 rws.append(reward(decode(s[len(pids) :]), numbers, target))
         rws_t = torch.tensor(rws, device=device)
-        loss = grpo_step(net, old_net, ref_net, opt, (seqs, plens, rws_t), group=group, pad_tok=PAD, device=device)
+        loss, metrics = rl_step(net, old_net, ref_net, opt, (seqs, plens, rws_t), group=group, pad_tok=PAD, device=device)
+        for history, values in zip(metric_history, metrics):
+            history.extend(values)
         if it % 25 == 0 or it == 1:
             exact = sum(1 for r in rws if r >= 1.0) / len(rws)
             print(f"iter {it:3d} loss {loss:+.4f} mean_r {rws_t.mean():.3f} exact {exact:.2f}", flush=True)
@@ -146,6 +149,7 @@ def train(iters=300, prompts_per_iter=16, group=12, seed=0, n_numbers=2, sft_ste
                     break
                 ids.append(nxt)
             print(f"{numbers} -> {target} | {decode(ids[len(encode(prompt_for(numbers, target))) :])}")
+    return metric_history
 
 def infer(count=3) -> str:
     model_path = "grpo_toy.pt"

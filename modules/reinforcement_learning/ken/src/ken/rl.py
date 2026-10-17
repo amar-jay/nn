@@ -18,10 +18,45 @@ def _completion_logps(net: torch.nn.Module, seqs: list[list[int]], plens: list[i
 
 
 
+METRIC_NAMES = (
+    "ratio", "adv_ratio", "surrogate", "KL",
+    "masked_ratio", "masked_adv_ratio", "masked_surrogate", "masked_KL",
+    "exact_rate", "equal_reward_groups", "weighted_KL", "clip_fraction",
+)
+
+
+def _record_metrics(history, ratio, adv, surr, kl, mask, rewards, group, eps,
+                    weights=None):
+    """Record pre-step batch metrics; masked means exclude prompt and padding."""
+    with torch.no_grad():
+        count = mask.sum().clamp_min(1)
+        def completion_mean(value):
+            return (value * mask).sum() / count
+        if weights is None:
+            weights = torch.ones_like(mask[:, 0])
+        weighted_mask = mask * weights[:, None]
+        grouped = rewards.reshape(-1, group)
+        values = (
+            ratio.mean(), (ratio * adv).mean(), surr.mean(), kl.mean(),
+            completion_mean(ratio), completion_mean(ratio * adv),
+            completion_mean(surr), completion_mean(kl),
+            (rewards >= 1.0).float().mean(),
+            (grouped.max(dim=1).values == grouped.min(dim=1).values).float().mean(),
+            (kl * weighted_mask).sum() / weighted_mask.sum().clamp_min(1),
+            completion_mean(((ratio < 1 - eps) | (ratio > 1 + eps)).float()),
+        )
+        for series, value in zip(history, values):
+            series.append(value.item())
+
+
 # --------------- TRYOUTS ---------------
+
+def rl_step(*args, **kwargs):
+    return ldw_step(*args, **kwargs)
 
 def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, beta=0.02, epochs=2, device="cpu"):
     seqs, plens, rwd_t = batch
+
     # group-normalized advantages (the heart of GRPO: no value network)
     adv = torch.zeros_like(rwd_t, device=device)
     for i in range(len(rwd_t) // group):
@@ -29,76 +64,92 @@ def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, b
         adv[i * group : (i + 1) * group] = (
             group_rewards - group_rewards.mean()
         ) / (group_rewards.std() + 1e-4)
+
+    # Frozen policy probabilities
     with torch.no_grad():
         old_logp, mask = _completion_logps(old_net, seqs, plens, pad_tok=pad_tok)
         ref_logp, _ = _completion_logps(ref_net, seqs, plens, pad_tok=pad_tok)
+
+    metric_history = [[] for _ in METRIC_NAMES]
+
     n_tok = mask.sum().clamp_min(1) # DAPO-like normalization
     for _ in range(epochs):
-        new_logp, _ = _completion_logps(net, seqs, plens)
+        new_logp, _ = _completion_logps(net, seqs, plens, pad_tok=pad_tok)
         ratio = torch.exp(new_logp - old_logp)
+
         masked_adv = adv[:, None] * mask
-        surr = torch.min(ratio* masked_adv, ratio.clamp(1 - eps, 1 + eps) * masked_adv)
+        surr = torch.min(ratio * masked_adv, ratio.clamp(1 - eps, 1 + eps) * masked_adv)
         kl = torch.exp(ref_logp - new_logp) - (ref_logp - new_logp) - 1  # k3 estimator
+
         loss = -(surr * mask).sum() / n_tok + beta * (kl * mask).sum() / n_tok 
+
         opt.zero_grad()
         loss.backward()
         opt.step()
-    return float(loss.detach())
+
+        unmasked_surr = torch.min(ratio * adv[:, None],
+                                  ratio.clamp(1 - eps, 1 + eps) * adv[:, None])
+        _record_metrics(metric_history, ratio, adv[:, None], unmasked_surr, kl,
+                        mask, rwd_t, group, eps)
+
+
+    return float(loss.detach()), tuple(metric_history)
 
 
 # The fundamental problem that GRPO or DAPO make different assumptions about is credit assignment.
 # GRPO: Every response is equally important.
 # DAPO: Every token is equally important.
 # Length-dependent weighting: more or less like an interpolation between the two.
-def ldw_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
-             eps=0.2, beta=0.02, epochs=2, device=None, alpha=0.5):
-    """Update using length-dependent weighting of the clipped surrogate and KL.
 
-    ``batch`` contains sequences, prompt lengths, and raw rewards, ordered in
-    contiguous groups for each prompt. A response of length L receives token
+def ldw_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, beta=0.02, epochs=2, device="cpu",
+    alpha=0.5,
+):
+    """Update using length-dependent weighting of the clipped surrogate and KL.
+    A response of length L receives token
     weight L**(-alpha), normalized by sum(L**(1-alpha)). Thus alpha=0
     averages tokens, alpha=1 averages response means, and alpha=0.5
     interpolates. Lengths count only completion tokens present in ``seqs``.
     """
-    if not 0 <= alpha <= 1:
-        raise ValueError("alpha must be between 0 and 1")
-    if epochs < 1:
-        raise ValueError("epochs must be positive")
+    assert alpha >= 0 and alpha <= 1, "alpha must be between 0 and 1"
     seqs, plens, rwd_t = batch
-    if not seqs or len(seqs) != len(plens) or len(seqs) != len(rwd_t):
-        raise ValueError("batch must contain equally many sequences, prompt lengths, and rewards")
-    if group < 2 or len(seqs) % group:
-        raise ValueError("batch must contain complete groups of at least two responses")
-    if any(not 1 <= plen < len(seq) for seq, plen in zip(seqs, plens)):
-        raise ValueError("each sequence needs a nonempty prompt and completion")
-    model_device = next(net.parameters()).device
-    if device is not None and torch.empty(0, device=device).device != model_device:
-        raise ValueError("device must match the model device")
-    rewards = torch.as_tensor(rwd_t, device=model_device, dtype=torch.float32)
-    if rewards.ndim != 1:
-        raise ValueError("rewards must be one-dimensional")
-    grouped = rewards.reshape(-1, group)
-    adv = ((grouped - grouped.mean(dim=1, keepdim=True)) /
-           (grouped.std(dim=1, keepdim=True) + 1e-4)).reshape(-1)
+
+    # Group-relative advantages
+    grouped = rwd_t.reshape(-1, group)
+    adv = (grouped - grouped.mean(dim=1, keepdim=True)
+    ) / (grouped.std(dim=1, keepdim=True,unbiased=False,) + 1e-4)
+    adv = adv.reshape(-1, 1)
 
     with torch.no_grad():
         old_logp, mask = _completion_logps(old_net, seqs, plens, pad_tok=pad_tok)
         ref_logp, _ = _completion_logps(ref_net, seqs, plens, pad_tok=pad_tok)
-    lengths = mask.sum(dim=1)
-    weights = lengths.pow(-alpha)
-    normalizer = lengths.pow(1 - alpha).sum()
+
+    # Length-dependent weights
+    n = mask.sum(dim=1)
+    valid = n > 0
+    n = n.clamp_min(1)
+    weights = n.pow(-alpha) * valid
+    norm = (n * weights).sum().clamp_min(1)
+
+    # for visualization
+    metric_history = [[] for _ in METRIC_NAMES]
+
     for _ in range(epochs):
         new_logp, _ = _completion_logps(net, seqs, plens, pad_tok=pad_tok)
         ratio = torch.exp(new_logp - old_logp)
-        token_adv = adv[:, None]
-        surr = torch.min(ratio * token_adv,
-                         ratio.clamp(1 - eps, 1 + eps) * token_adv)
-        d = ref_logp - new_logp
-        kl = d.exp() - d - 1
-        # Apply the same length weighting to both terms of the token objective.
-        per_response_loss = ((-surr + beta * kl) * mask).sum(dim=1)
-        loss = (weights * per_response_loss).sum() / normalizer
+
+        surr = torch.min(ratio * adv, ratio.clamp(1 - eps, 1 + eps) * adv)
+        kl = torch.exp(ref_logp - new_logp) - (ref_logp - new_logp) - 1  # k3 estimator
+
+        tok_loss = -surr + beta * kl # Per-token objective
+        per_resp = (tok_loss * mask).sum(dim=1) # Length-dependent reduction
+
+        loss = (weights * per_resp).sum() / norm
+
         opt.zero_grad()
         loss.backward()
         opt.step()
-    return float(loss.detach())
+        _record_metrics(metric_history, ratio, adv, surr, kl, mask,
+                        rwd_t, group, eps, weights=weights)
+
+
+    return float(loss.detach()), tuple(metric_history)
