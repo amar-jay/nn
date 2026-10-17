@@ -13,26 +13,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .countdown import generate_puzzle, reward
-
-CHARS = "0123456789+-*/() :="
-BOS, EOS, PAD = 0, 1, 2
-stoi = {"<bos>": BOS, "<eos>": EOS, "<pad>": PAD, **{c: i + 3 for i, c in enumerate(CHARS)}}
-VOCAB = len(stoi)
-itos = {i: c for c, i in stoi.items()}
-
-
-def encode(s: str) -> list[int]:
-    return [stoi[c] for c in s]
-
-
-def decode(ids: list[int]) -> str:
-    return "".join(itos[i] for i in ids if i >= 3)
-
-
-def prompt_for(numbers: list[int], target: int) -> str:
-    return f"{' '.join(map(str, numbers))}:{target}="
-
+from .countdown import generate_puzzle, reward, encode, decode, prompt_for, random_valid_expr, VOCAB, PAD, EOS
+from .rl import grpo_step
 
 class Block(nn.Module):
     def __init__(self, d: int, heads: int):
@@ -43,10 +25,10 @@ class Block(nn.Module):
         self.mlp = nn.Sequential(nn.Linear(d, 4 * d), nn.GELU(), nn.Linear(4 * d, d))
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        h = self.ln1(x)
+        h = self.ln1(x) 
         a, _ = self.attn(h, h, h, attn_mask=mask)
         x = x + a
-        return x + self.mlp(self.ln2(x))
+        return x + self.mlp(self.ln2(x)) # preLN
 
 
 class TinyGPT(nn.Module):
@@ -84,11 +66,6 @@ def sample(net: TinyGPT, prompt_ids: list[int], n: int, max_new: int = 24) -> li
     return seqs
 
 
-def random_valid_expr(numbers: list[int], rng: random.Random) -> str:
-    a, b = rng.sample(numbers, 2)
-    e = f"{a}{rng.choice(['+', '-', '*'])}{b}"
-    return f"({e})" if rng.random() < 0.3 else e
-
 
 def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: int = 32):
     """SFT warm-start: teach expression *format* so GRPO has signal to amplify.
@@ -99,7 +76,7 @@ def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: i
     device = next(net.parameters()).device
     opt = torch.optim.AdamW(net.parameters(), lr=3e-4)
     net.train()
-    for _ in range(steps):
+    for step in range(steps):
         seqs, plens = [], []
         for _ in range(batch):
             numbers, target = generate_puzzle(rng, 2)
@@ -121,41 +98,9 @@ def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: i
         opt.zero_grad()
         loss.backward()
         opt.step()
+        if step % 50 == 0 or step == steps - 1:
+            print(f"sft step {step:3d} loss {float(loss.detach()):.4f}", flush=True)
     print(f"sft done, final loss {float(loss.detach()):.4f}", flush=True)
-
-
-def completion_logps(net: TinyGPT, seqs: list[list[int]], plens: list[int]):
-    """Per-token logprobs of the completion part of each sequence. Returns padded tensor + mask."""
-    device = next(net.parameters()).device
-    maxlen = max(len(s) for s in seqs)
-    idx = torch.full((len(seqs), maxlen), PAD, device=device, dtype=torch.long)
-    for i, s in enumerate(seqs):
-        idx[i, : len(s)] = torch.tensor(s, device=device)
-    logp = F.log_softmax(net(idx)[:, :-1], dim=-1).gather(-1, idx[:, 1:, None]).squeeze(-1)
-    pos = torch.arange(idx.shape[1] - 1, device=device)[None]
-    plens_t = torch.tensor(plens, device=device)[:, None]
-    lens_t = torch.tensor([len(s) for s in seqs], device=device)[:, None]
-    mask = (pos >= plens_t - 1) & (pos < lens_t - 1)  # token t predicted from prefix <: completion
-    return logp, mask.float()
-
-
-def grpo_step(net, old_net, ref_net, opt, batch, eps=0.2, beta=0.02, epochs=2):
-    seqs, plens, rewards = batch
-    with torch.no_grad():
-        old_logp, mask = completion_logps(old_net, seqs, plens)
-        ref_logp, _ = completion_logps(ref_net, seqs, plens)
-    n_tok = mask.sum().clamp_min(1)
-    for _ in range(epochs):
-        new_logp, _ = completion_logps(net, seqs, plens)
-        ratio = torch.exp(new_logp - old_logp)
-        adv = rewards[:, None] * mask
-        surr = torch.min(ratio * adv, ratio.clamp(1 - eps, 1 + eps) * adv)
-        kl = torch.exp(ref_logp - new_logp) - (ref_logp - new_logp) - 1  # k3 estimator
-        loss = -(surr * mask).sum() / n_tok + beta * (kl * mask).sum() / n_tok
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-    return float(loss.detach())
 
 
 def train(iters=300, prompts_per_iter=16, group=12, seed=0, n_numbers=2, sft_steps=400):
@@ -181,16 +126,12 @@ def train(iters=300, prompts_per_iter=16, group=12, seed=0, n_numbers=2, sft_ste
                 seqs.append(s)
                 plens.append(len(pids))
                 rws.append(reward(decode(s[len(pids) :]), numbers, target))
-        # group-normalized advantages (the heart of GRPO: no value network)
         rws_t = torch.tensor(rws, device=device)
-        adv = torch.zeros_like(rws_t)
-        for i in range(prompts_per_iter):
-            g = rws_t[i * group : (i + 1) * group]
-            adv[i * group : (i + 1) * group] = (g - g.mean()) / (g.std() + 1e-4)
-        loss = grpo_step(net, old_net, ref_net, opt, (seqs, plens, adv))
+        loss = grpo_step(net, old_net, ref_net, opt, (seqs, plens, rws_t), group=group, pad_tok=PAD, device=device)
         if it % 25 == 0 or it == 1:
             exact = sum(1 for r in rws if r >= 1.0) / len(rws)
             print(f"iter {it:3d} loss {loss:+.4f} mean_r {rws_t.mean():.3f} exact {exact:.2f}", flush=True)
+    torch.save(net.state_dict(), "grpo_toy.pt")
 
     # show one greedy decode per fresh puzzle
     net.eval()
@@ -206,6 +147,32 @@ def train(iters=300, prompts_per_iter=16, group=12, seed=0, n_numbers=2, sft_ste
                 ids.append(nxt)
             print(f"{numbers} -> {target} | {decode(ids[len(encode(prompt_for(numbers, target))) :])}")
 
+def infer(count=3) -> str:
+    model_path = "grpo_toy.pt"
+    rng = random.Random(0)
+    n_numbers = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+    net = TinyGPT().to(device)
+    net.load_state_dict(torch.load(model_path, map_location=device))
 
+    total_reward = 0.0
+
+    net.eval()
+    with torch.no_grad():
+        for _ in range(count):
+            numbers, target = generate_puzzle(rng, n_numbers)
+            prompt_ids = encode(prompt_for(numbers, target))
+            ids = prompt_ids.copy()
+            for _ in range(24):
+                inp = torch.tensor([ids[-64:]], device=device)
+                nxt = int(net(inp)[0, -1].argmax())
+                if nxt == EOS:
+                    break
+                ids.append(nxt)
+            completion = decode(ids[len(prompt_ids) :])
+            r = reward(completion, numbers, target)
+            print(f"{numbers} -> {target} | {completion} | reward: {r==1}")
+            total_reward += r
+    print(f"Average reward over {count} puzzles: {total_reward / count:.3f}")
 if __name__ == "__main__":
     train()

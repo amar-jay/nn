@@ -12,6 +12,27 @@ import warnings
 OPS = ("+", "-", "*")
 TOKEN_RE = re.compile(r"\d+|[+\-*/()]")
 
+# ----------------- ENCODING -----------------
+CHARS = "0123456789+-*/() :="
+BOS, EOS, PAD = 0, 1, 2
+stoi = {"<bos>": BOS, "<eos>": EOS, "<pad>": PAD, **{c: i + 3 for i, c in enumerate(CHARS)}}
+VOCAB = len(stoi)
+itos = {i: c for c, i in stoi.items()}
+
+
+def encode(s: str) -> list[int]:
+    return [stoi[c] for c in s]
+
+
+def decode(ids: list[int]) -> str:
+    return "".join(itos[i] for i in ids if i >= 3)
+
+
+def prompt_for(numbers: list[int], target: int) -> str:
+    return f"{' '.join(map(str, numbers))}:{target}="
+
+
+# ----------------- PUZZLE GENERATION & REWARD -----------------
 
 def generate_puzzle(rng: random.Random, n_numbers: int = 4) -> tuple[list[int], int]:
     """Sample numbers plus a guaranteed-solvable target (built with +,-,*)."""
@@ -57,6 +78,11 @@ def safe_eval(expr: str) -> float | None:
     except (OverflowError, ValueError):
         return None
     return val if math.isfinite(val) else None
+
+def random_valid_expr(numbers: list[int], rng: random.Random) -> str:
+    a, b = rng.sample(numbers, 2)
+    e = f"{a}{rng.choice(['+', '-', '*'])}{b}"
+    return f"({e})" if rng.random() < 0.3 else e
 
 
 def reward(expr: str, numbers: list[int], target: int) -> float:

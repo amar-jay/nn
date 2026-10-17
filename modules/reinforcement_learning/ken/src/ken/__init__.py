@@ -1,2 +1,4 @@
+from ken.grpo_toy import train, infer
 def main() -> None:
-    print("Hello from ken!")
+    # train()
+    infer(100)
