@@ -247,6 +247,52 @@ def rloo_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
     return float(loss.detach()), tuple(metric_history)
 
 
+def rms_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
+                eps=0.2, beta=0.02, epochs=2, device="cpu", rms_eps=1e-6):
+    """Unclipped -mean(r*A / RMS(r*A)) plus reference KL.
+
+    RMS is computed over completion tokens and remains differentiable.
+    Advantages use the same group mean/std as rlvr_kl. eps is only the
+    diagnostic ratio threshold; rms_eps stabilizes the normalization.
+    """
+    seqs, plens, rewards = batch
+    if group < 2 or rewards.ndim != 1 or rewards.numel() == 0 or rewards.numel() % group:
+        raise ValueError("rewards must contain complete groups of at least two answers")
+    if epochs < 1 or rms_eps <= 0:
+        raise ValueError("epochs and rms_eps must be positive")
+    grouped = rewards.reshape(-1, group)
+    adv = ((grouped - grouped.mean(dim=1, keepdim=True)) /
+           (grouped.std(dim=1, keepdim=True, correction=0) + 1e-4)).reshape(-1, 1)
+    with torch.no_grad():
+        old_logp, mask = _completion_logps(old_net, seqs, plens, pad_tok=pad_tok)
+        ref_logp, _ = _completion_logps(ref_net, seqs, plens, pad_tok=pad_tok)
+    valid = mask.bool()
+    if not valid.any():
+        raise ValueError("batch must contain at least one completion token")
+    history = [[] for _ in METRIC_NAMES]
+    for _ in range(epochs):
+        new_logp, _ = _completion_logps(net, seqs, plens, pad_tok=pad_tok)
+        ratio = (new_logp - old_logp).exp()
+        z = ratio * adv
+        z_valid = z[valid]
+        rms = (z_valid.square().mean() + rms_eps).sqrt()
+        normalized = z / rms
+        policy_loss = -(z_valid / rms).mean()
+        kl_logp = new_logp if beta != 0 else new_logp.detach()
+        d = ref_logp - kl_logp
+        kl = d.exp() - d - 1
+        loss = policy_loss
+        if beta != 0:
+            loss = loss + beta * kl[valid].mean()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        # Surrogate metrics show the normalized objective, adv_ratio the raw r*A.
+        _record_metrics(history, ratio, adv, normalized, kl, mask,
+                        rewards, group, eps, clip_surrogate=False)
+    return float(loss.detach()), tuple(history)
+
+
 def rl_step(*args, **kwargs):
     return grpo_step(*args, **kwargs)
 rl_step.name = grpo_step.__name__
@@ -263,6 +309,7 @@ def select_experiment(rl_step="grpo"):
         "rlvr_kl": (rlvr_kl_step, exact_reward),
         "unclip_kl": (unclip_kl_step, exact_reward),
         "rloo_kl": (rloo_kl_step, exact_reward),
+        "rms_kl": (rms_kl_step, exact_reward),
     }
     if rl_step not in experiments:
         raise ValueError(f"Unknown RL step: {rl_step}. Choose {', '.join(experiments)}.")
