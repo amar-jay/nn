@@ -15,8 +15,6 @@ uv run ken diagnose --numbers 3 --count 100 --samples 12 --seed 12345
 
 Training uses CUDA and raises an error if CUDA is unavailable. Inference and diagnostics automatically use CUDA when available, otherwise CPU. The CLI currently trains for **2,100 SFT steps and 600 RL iterations**, with 64 prompts per iteration, 12 answers per prompt, and up to 48 generated tokens. SFT batch size is 64: 134,400 generated warm-up examples.
 
-Training overwrites `grpo_toy.pt`. Preserve a checkpoint manually before another run if you want to compare models. Diagnostics print results and return an in-memory report; they do not write JSON files.
-
 **Configuration details that matter:**
 
 - `--rl-step` selects both the update function and its paired reward function.
