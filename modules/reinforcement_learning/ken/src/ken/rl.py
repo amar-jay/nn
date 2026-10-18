@@ -2,18 +2,22 @@ import torch
 import torch.nn.functional as F
 # from .grpo_toy import PAD
 
-def _completion_logps(net: torch.nn.Module, seqs: list[list[int]], plens: list[int], pad_tok: int=2):
+def _completion_logps(net: torch.nn.Module, seqs: list[list[int]], plens: list[int], pad_tok: int=2,
+                      return_distribution=False):
     """Per-token logprobs of the completion part of each sequence. Returns padded tensor + mask."""
     device = next(net.parameters()).device
     maxlen = max(len(s) for s in seqs)
     idx = torch.full((len(seqs), maxlen), pad_tok, device=device, dtype=torch.long)
     for i, s in enumerate(seqs):
         idx[i, : len(s)] = torch.tensor(s, device=device)
-    logp = F.log_softmax(net(idx)[:, :-1], dim=-1).gather(-1, idx[:, 1:, None]).squeeze(-1)
+    distribution = F.log_softmax(net(idx)[:, :-1], dim=-1)
+    logp = distribution.gather(-1, idx[:, 1:, None]).squeeze(-1)
     pos = torch.arange(idx.shape[1] - 1, device=device)[None]
     plens_t = torch.tensor(plens, device=device)[:, None]
     lens_t = torch.tensor([len(s) for s in seqs], device=device)[:, None]
     mask = (pos >= plens_t - 1) & (pos < lens_t - 1)  # token t predicted from prefix <: completion
+    if return_distribution:
+        return logp, mask.float(), distribution
     return logp, mask.float()
 
 
@@ -248,7 +252,7 @@ def rloo_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
 
 
 def rms_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
-                eps=0.2, beta=0.02, epochs=2, device="cpu", rms_eps=1e-6, detach_rms=True):
+                eps=0.2, beta=0.02, epochs=2, device="cpu", rms_eps=1e-6, detach_rms=False):
     """Unclipped -mean(r*A / RMS(r*A)) plus reference KL.
 
     RMS is computed over completion tokens. Set detach_rms=True to treat
@@ -296,6 +300,94 @@ def rms_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
     return float(loss.detach()), tuple(history)
 
 
+def rms_ref_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
+                eps=0.2, beta=0.02, epochs=2, device="cpu", rms_eps=1e-6, detach_rms=False):
+    """Unclipped RMS policy objective plus exact KL(reference || current).
+
+    RMS is computed over completion tokens. Set detach_rms=True to treat
+    its denominator as a fixed scale during backpropagation.
+    Advantages use the same group mean/std as rlvr_kl. eps is only the
+    diagnostic ratio threshold; rms_eps stabilizes the normalization.
+    """
+    seqs, plens, rewards = batch
+    if group < 2 or rewards.ndim != 1 or rewards.numel() == 0 or rewards.numel() % group:
+        raise ValueError("rewards must contain complete groups of at least two answers")
+    if epochs < 1 or rms_eps <= 0:
+        raise ValueError("epochs and rms_eps must be positive")
+    grouped = rewards.reshape(-1, group)
+    adv = ((grouped - grouped.mean(dim=1, keepdim=True))
+        / (grouped.std(dim=1, keepdim=True, correction=0) + 1e-4)).reshape(-1, 1).detach()
+    with torch.no_grad():
+        old_logp, mask = _completion_logps(old_net, seqs, plens, pad_tok=pad_tok)
+        _, _, ref_distribution = _completion_logps(
+            ref_net, seqs, plens, pad_tok=pad_tok, return_distribution=True)
+    valid = mask.bool()
+    if not valid.any():
+        raise ValueError("batch must contain at least one completion token")
+    history = [[] for _ in METRIC_NAMES]
+    for _ in range(epochs):
+        new_logp, _, new_distribution = _completion_logps(
+            net, seqs, plens, pad_tok=pad_tok, return_distribution=True)
+        ratio = (new_logp - old_logp).exp()
+        z = ratio * adv
+        z_valid = z[valid]
+        rms = (z_valid.square().mean() + rms_eps).sqrt()
+        if detach_rms:
+            rms = rms.detach()
+        normalized = z / rms
+        policy_loss = -z_valid.mean() / rms
+        kl = (ref_distribution.exp() * (ref_distribution - new_distribution)).sum(dim=-1)
+        loss = policy_loss
+        if beta != 0:
+            loss = loss + beta * kl[valid].mean()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        # Surrogate metrics show the normalized objective, adv_ratio the raw r*A.
+        _record_metrics(history, ratio, adv, normalized, kl, mask,
+                        rewards, group, eps, clip_surrogate=False)
+    return float(loss.detach()), tuple(history)
+
+
+def grpo_ref_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
+                     eps=0.2, beta=0.02, epochs=2, device="cpu"):
+    """Clipped group-relative policy update with exact KL(reference || current).
+
+    Sums over the whole vocabulary at each stored completion prefix. The
+    prefixes still come from old-policy rollouts; exact refers to the token
+    distribution sum, not an expectation over all possible trajectories.
+    Paired with exact_reward to compare directly against rlvr_kl.
+    """
+    seqs, plens, rewards = batch
+    if group < 2 or rewards.ndim != 1 or not rewards.numel() or rewards.numel() % group:
+        raise ValueError("rewards must contain complete groups of at least two answers")
+    if epochs < 1:
+        raise ValueError("epochs must be positive")
+    grouped = rewards.reshape(-1, group)
+    adv = ((grouped - grouped.mean(dim=1, keepdim=True)) /
+           (grouped.std(dim=1, keepdim=True) + 1e-4)).reshape(-1, 1)
+    with torch.no_grad():
+        old_logp, mask = _completion_logps(old_net, seqs, plens, pad_tok=pad_tok)
+        _, _, ref_distribution = _completion_logps(
+            ref_net, seqs, plens, pad_tok=pad_tok, return_distribution=True)
+    count = mask.sum().clamp_min(1)
+    history = [[] for _ in METRIC_NAMES]
+    for _ in range(epochs):
+        new_logp, _, new_distribution = _completion_logps(
+            net, seqs, plens, pad_tok=pad_tok, return_distribution=True)
+        ratio = (new_logp - old_logp).exp()
+        surr = torch.min(ratio * adv, ratio.clamp(1 - eps, 1 + eps) * adv)
+        # q is frozen reference; p is the current policy. Gradient wrt logits: p-q.
+        kl = (ref_distribution.exp() * (ref_distribution - new_distribution)).sum(dim=-1)
+        loss = -(surr * mask).sum() / count + beta * (kl * mask).sum() / count
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        # All KL panels now report the exact vocabulary sum in this direction.
+        _record_metrics(history, ratio, adv, surr, kl, mask, rewards, group, eps)
+    return float(loss.detach()), tuple(history)
+
+
 def rl_step(*args, **kwargs):
     return grpo_step(*args, **kwargs)
 rl_step.name = grpo_step.__name__
@@ -313,6 +405,8 @@ def select_experiment(rl_step="grpo"):
         "unclip_kl": (unclip_kl_step, exact_reward),
         "rloo_kl": (rloo_kl_step, exact_reward),
         "rms_kl": (rms_kl_step, exact_reward),
+        "rms_ref_kl": (rms_ref_kl_step, exact_reward),
+        "grpo_ref_kl": (grpo_ref_kl_step, exact_reward),
     }
     if rl_step not in experiments:
         raise ValueError(f"Unknown RL step: {rl_step}. Choose {', '.join(experiments)}.")
