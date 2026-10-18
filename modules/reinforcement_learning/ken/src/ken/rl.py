@@ -248,7 +248,7 @@ def rloo_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
 
 
 def rms_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
-                eps=0.2, beta=0.02, epochs=2, device="cpu", rms_eps=1e-6, detach_rms=False):
+                eps=0.2, beta=0.02, epochs=2, device="cpu", rms_eps=1e-6, detach_rms=True):
     """Unclipped -mean(r*A / RMS(r*A)) plus reference KL.
 
     RMS is computed over completion tokens. Set detach_rms=True to treat
@@ -263,7 +263,7 @@ def rms_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
         raise ValueError("epochs and rms_eps must be positive")
     grouped = rewards.reshape(-1, group)
     adv = ((grouped - grouped.mean(dim=1, keepdim=True))
-        / (grouped.std(dim=1, keepdim=True, correction=0) + 1e-4)).reshape(-1, 1)#.detach()
+        / (grouped.std(dim=1, keepdim=True, correction=0) + 1e-4)).reshape(-1, 1).detach()
     with torch.no_grad():
         old_logp, mask = _completion_logps(old_net, seqs, plens, pad_tok=pad_tok)
         ref_logp, _ = _completion_logps(ref_net, seqs, plens, pad_tok=pad_tok)
