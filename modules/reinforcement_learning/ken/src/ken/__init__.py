@@ -22,13 +22,14 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     training = commands.add_parser("train")
     training.add_argument("--numbers", type=int, default=4)
+    training.add_argument("--rl-step", "--rl_step", choices=["grpo", "ldw", "rlvr"])
     evaluation = commands.add_parser("infer", help="Evaluate a saved checkpoint")
     evaluation.add_argument("--count", type=int, default=100)
     evaluation.add_argument("--numbers", type=int, default=4)
     evaluation.add_argument("--show", type=int, default=20)
     args = parser.parse_args()
     if args.command == "train":
-        show_metrics(train(n_numbers=args.numbers))
+        show_metrics(train(n_numbers=args.numbers, rl_step=args.rl_step))
     else:
         infer(count=args.count,
               n_numbers=args.numbers,

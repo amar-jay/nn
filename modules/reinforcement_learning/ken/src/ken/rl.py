@@ -173,5 +173,19 @@ def rlvr_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
 
 
 def rl_step(*args, **kwargs):
-    return rlvr_step(*args, **kwargs)
-rl_step.name = rlvr_step.__name__
+    return grpo_step(*args, **kwargs)
+rl_step.name = grpo_step.__name__
+
+
+def select_experiment(rl_step="grpo"):
+    """Select an RL update and its paired verifier reward together."""
+    from .countdown import exact_reward, reward
+
+    experiments = {
+        "grpo": (grpo_step, reward),
+        "ldw": (ldw_step, reward),
+        "rlvr": (rlvr_step, exact_reward),
+    }
+    if rl_step not in experiments:
+        raise ValueError(f"Unknown RL step: {rl_step}. Choose grpo, ldw, or rlvr.")
+    return experiments[rl_step]

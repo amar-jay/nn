@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .countdown import generate_puzzle, reward, encode, decode, prompt_for, random_valid_expr, VOCAB, PAD, EOS
-from .rl import METRIC_NAMES, rl_step
+from .rl import METRIC_NAMES, select_experiment
 
 class Block(nn.Module):
     def __init__(self, d: int, heads: int):
@@ -123,8 +123,10 @@ def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: i
 
 
 def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=4,
-          sft_steps=400, sft_batch=64, device="cuda", max_new=48):
+          sft_steps=400, sft_batch=64, device="cuda", max_new=48,
+          rl_step="grpo"):
     """Train on fresh puzzles each iteration; larger batches cover more puzzles."""
+    update_step, reward_fn = select_experiment(rl_step)
     device = torch.device(device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError(
@@ -142,7 +144,7 @@ def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=4,
     print(f"SFT: {sft_steps * sft_batch:,} examples; RL: "
           f"{prompts_per_iter} puzzles x {group} answers per iteration "
           f"({iters * prompts_per_iter:,} generated puzzles total)", flush=True)
-    print(f"Using RL step: {rl_step.name}")
+    print(f"Using RL step: {update_step.__name__} | reward: {reward_fn.__name__}")
     pretrain_format(net, rng, steps=sft_steps, batch=sft_batch, n_numbers=n_numbers)
     ref_net = copy.deepcopy(net).eval()
     for p in ref_net.parameters():
@@ -160,14 +162,16 @@ def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=4,
             for s in rollout:
                 seqs.append(s)
                 plens.append(len(pids))
-                rws.append(reward(decode(s[len(pids) :]), numbers, target))
+                rws.append(reward_fn(decode(s[len(pids) :]), numbers, target))
         rws_t = torch.tensor(rws, device=device)
-        loss, metrics = rl_step(net, old_net, ref_net, opt, (seqs, plens, rws_t), group=group, pad_tok=PAD, device=device)
+        loss, metrics = update_step(net, old_net, ref_net, opt, (seqs, plens, rws_t), group=group, pad_tok=PAD, device=device)
         for history, values in zip(metric_history, metrics):
             history.extend(values)
         if it % 25 == 0 or it == 1:
             exact = sum(1 for r in rws if r >= 1.0) / len(rws)
-            print(f"iter {it:3d} loss {loss:+.4f} mean_r {rws_t.mean():.3f} exact {exact:.2f}", flush=True)
+            successful_groups = (rws_t.reshape(-1, group) >= 1).any(dim=1).float().mean()
+            print(f"iter {it:3d} loss {loss:+.4f} mean_r {rws_t.mean():.3f} "
+                  f"exact {exact:.2f} groups_with_exact {successful_groups:.2f}", flush=True)
     torch.save(net.state_dict(), "grpo_toy.pt")
 
     # show one greedy decode per fresh puzzle

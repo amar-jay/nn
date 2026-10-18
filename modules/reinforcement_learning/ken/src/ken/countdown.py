@@ -89,6 +89,14 @@ def random_valid_expr(numbers: list[int], rng: random.Random) -> str:
     return e
 
 
+# ----------------- REWARD MODELLING -----------------
+
+def exact_reward(expr: str, numbers: list[int], target: int) -> float:
+    """Binary verifier: 1 only for an exact solution using allowed numbers."""
+    val = safe_eval(expr)
+    return float(val is not None and _uses_allowed_numbers(expr, numbers)
+                 and abs(val - target) < 1e-6)
+
 
 def reward(expr: str, numbers: list[int], target: int) -> float:
     """1.0 exact hit, 0.3 valid-but-wrong, 0.1 parseable-only, else 0.0."""
