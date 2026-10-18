@@ -1,181 +1,209 @@
-# ken — GRPO, hands-on
+# ken — a small lab for reinforcement-learning experiments
 
-Learning repo: Group Relative Policy Optimization, from a from-scratch
-implementation on a toy game to a real LLM run with TRL. Built for a 4GB
-laptop GPU (RTX 3050), Python 3.11, `uv`-managed venv.
+Countdown is the test environment, not the research objective. This project uses a small character-level transformer and a verifiable arithmetic task to study how reward design, advantage estimation, normalization, clipping, and regularization change learning. The aim is to make experiments understandable and affordable on a laptop GPU before introducing a larger model or more complicated task.
 
-Map:
+The results below are observations from our learning sessions, not benchmark claims. Most variants have only one training seed; apparent rankings need replication.
 
-- `src/ken/countdown.py` — the verifiable task + reward (both stages use it)
-- `src/ken/grpo_toy.py` — Stage 1: GRPO written from scratch in pure torch
-- `src/ken/grpo_llm.py` — Stage 2: GRPO on Qwen2.5-0.5B-Instruct via TRL
-- `tests/` — regression tests for the reward code both stages depend on
+## Run the current code
 
-## The 2-minute theory (what the code below implements)
+```bash
+uv sync
+uv run ken train --numbers 3 --rl-step grpo_ref_kl
+uv run ken infer --numbers 3 --count 1000 --show 10 --seed 0
+uv run ken diagnose --numbers 3 --count 100 --samples 12 --seed 12345
+```
 
-GRPO trains a policy from **groups** of completions instead of a learned
-value function (that is the whole difference vs PPO):
+Training uses CUDA and raises an error if CUDA is unavailable. Inference and diagnostics automatically use CUDA when available, otherwise CPU. The CLI currently trains for **2,100 SFT steps and 600 RL iterations**, with 64 prompts per iteration, 12 answers per prompt, and up to 48 generated tokens. SFT batch size is 64: 134,400 generated warm-up examples.
 
-1. For one prompt, sample G completions from the current ("old") policy.
-2. Score each with a reward function — here, checking arithmetic, no humans.
-3. Advantage = how much better/worse a completion is **than its own group
-   mean**, divided by group std. No critic network anywhere.
-4. Update with a PPO-style clipped surrogate: push up probabilities of
-   above-average completions, but cap the per-token probability ratio at
-   `[1-ε, 1+ε]` so one batch can't wreck the policy.
-5. Add a small KL penalty against a frozen reference copy so the policy
-   doesn't drift into gibberish that happens to score.
-6. Repeat. Reward signal does all the teaching.
+Training overwrites `grpo_toy.pt`. Preserve a checkpoint manually before another run if you want to compare models. Diagnostics print results and return an in-memory report; they do not write JSON files.
 
-Resources: the algorithm comes from the DeepSeekMath paper
-([arXiv:2402.03300](https://arxiv.org/abs/2402.03300), Section 4), and its
-famous application is DeepSeek-R1's reasoning training
-([arXiv:2501.12948](https://arxiv.org/abs/2501.12948)).
+**Configuration details that matter:**
 
-## Part 1 — `src/ken/countdown.py`: the game and the reward
+- `--rl-step` selects both the update function and its paired reward function.
+- The CLI currently parses training `--seed` but does **not** forward it to `train()`. CLI training therefore uses `train`'s default seed, 0. Evaluation `--seed` is forwarded correctly. Different evaluation seeds are not different training seeds.
+- Python `train()` defaults differ from CLI settings. For explicit experiments, pass the full configuration:
 
-The countdown game: given N numbers and a target, emit an arithmetic
-expression that evaluates to the target using each number at most once.
-It is ideal for RL practice because the reward is **verifiable** — a
-function checks the answer, so no reward model or human labels are needed.
+```python
+from ken.grpo_toy import train
 
-- `generate_puzzle(rng, n_numbers)` — samples numbers in [1, 20] and builds
-  the target by combining them with `+`/`-`/`*`, so every puzzle is
-  guaranteed solvable. (If targets were random, half the training signal
-  would punish the policy for impossible tasks.)
-- `safe_eval(expr)` — evaluates a candidate with `eval` in a locked-down
-  namespace (`{"__builtins__": {}}`), rejects anything outside
-  `[0-9+\-*/() ]`, and explicitly rejects `**` / `//` (a real crash taught
-  us the model discovers exponentiation; `20**20**20` overflows ints).
-  Oversized ints (bit_length > 1024) return `None` instead of raising.
-- `_uses_allowed_numbers(expr, numbers)` — multisubset check: every number
-  in the expression must come from the puzzle, each at most as often as
-  given, minimum two numbers (blocks the "just echo the target" hack).
-- `reward(expr, numbers, target)` — the ladder both stages optimize:
-  `1.0` exact hit, `0.3` valid-but-wrong expression, `0.1` parseable but
-  using foreign numbers, `0.0` garbage. Shaping matters: with only
-  exact-match reward, a weak policy scores 0 on everything and learns
-  nothing (we measured exactly that: mean reward 0.000 for 200
-  iterations pre-shaping).
+metrics = train(
+    n_numbers=3, rl_step="grpo_ref_kl", seed=0,
+    sft_steps=2100, iters=600, prompts_per_iter=64, group=12,
+)
+```
 
-## Part 2 — `src/ken/grpo_toy.py`: GRPO from scratch (Stage 1)
+- Coefficients are currently function parameters in `src/ken/rl.py`, not CLI arguments. The current `rlvr_kl_step` default beta is **0.01**; most other KL variants default to **0.02**. Historical runs may have used earlier defaults. Record the coefficient when comparing runs.
+- Optional before/after diagnostic calls in `train()` are currently commented out. The standalone `diagnose` command is available.
 
-Run: `.venv/bin/python -m ken.grpo_toy` (~10 min on GPU).
+## Environment and warm-up
 
-- **Vocab / encoding** (`CHARS`, `encode`, `decode`, `prompt_for`) —
-  character-level tokens over digits, operators, parens, space, `:`, `=`
-  plus BOS/EOS/PAD. A prompt looks like `6 1:7=` and the policy completes
-  with e.g. `1+6`. Character level keeps the model tiny and every mechanism
-  visible; the price is the policy must also learn digit syntax.
-- **`TinyGPT`** — 2-layer, 4-head causal transformer (d=128). ~200k
-  params: big enough to learn 2-number countdown, small enough to train in
-  minutes. Standard blocks: embedding + learned positions, masked
-  multi-head attention, MLP, residuals, final LayerNorm + tied-less head.
-- **`sample()`** — rollout collection: autoregressive multinomial sampling
-  (temperature 1.0) up to 24 new tokens or EOS. This is step 1 of GRPO;
-  sampling from the *old* policy (a frozen deepcopy per iteration) is what
-  makes the probability ratios in step 4 meaningful.
-- **`completion_logps()`** — the bookkeeping heart: pads a batch of
-  prompt+completion sequences, runs one forward pass, and returns
-  per-token log-probs plus a mask selecting **completion tokens only**.
-  Prompt tokens never get gradient (we train what the policy *says*,
-  not what it *reads*).
-- **`grpo_step()`** — one update on the batch, run for 2 epochs:
-  `ratio = exp(new_logp - old_logp)` per completion token; surrogate =
-  `min(ratio·A, clip(ratio)·A)` with the group-normalized advantages `A`;
-  plus `beta * KL` with the k3 estimator
-  `exp(lr) - lr - 1`, `lr = ref_logp - new_logp`, `beta = 0.02`.
-  Loss is averaged over completion tokens, not sequences, so long
-  rambling completions don't dominate short ones.
-- **`pretrain_format()`** — supervised warm-start: 400 steps of next-token
-  cross-entropy on random *valid* expressions (correctness irrelevant).
-  Without it the random policy almost never emits anything parseable and
-  every group advantage is ~0. This mirrors real pipelines (SFT, then RL)
-  and is the single highest-leverage lesson of Stage 1.
-- **`train()`** — the loop: 16 prompts × G=12 rollouts per iteration,
-  group-normalize rewards → advantages, update, log every 25 iters, finish
-  with 3 greedy decodes so you can *see* what was learned.
-  Observed: exact-hit rate 0.17 → 0.72 over 300 iterations.
+A prompt such as `6 20 18:2160=` asks for an expression using the available numbers to reach 2160. The `=` marks where the answer begins. `((6*20)*18)` is a correct completion.
 
-Resources: Andrej Karpathy's
-["Let's build GPT"](https://www.youtube.com/watch?v=kCc8FmEb1nY) for the
-tiny-transformer machinery; the PPO clipped objective it borrows is from
-[arXiv:1707.06347](https://arxiv.org/abs/1707.06347).
+The generator draws numbers from 1 through 20, shuffles them, and constructs a guaranteed-solvable target by combining all numbers left-to-right with `+`, `-`, or `*`. The verifier allows a solution to use **any subset of at least two operands**, respecting the multiplicity of supplied numbers. Unused numbers are allowed. Division is also accepted by the verifier, though the generator uses only the other three operations.
 
-## Part 3 — `src/ken/grpo_llm.py`: real LLM GRPO with TRL (Stage 2)
+The warm-up teaches expression format and operand copying, not target correctness. It keeps all puzzle numbers in the prompt but uniformly selects an operand count from 2 through the number supplied, then builds a random nested expression. Thus three-number warm-up mixes two- and three-operand answers. These are valid expressions, not necessarily solutions.
 
-Run: `.venv/bin/python -m ken.grpo_llm --steps 50` (~2 min for 50 steps).
+The model is a small causal transformer: two layers, four attention heads, width 128, and a 128-token positional capacity. It uses character tokens plus BOS/EOS/PAD. RL rollouts retain EOS, allowing the loss to train the decision to stop. A length-limited rollout does not receive an artificial EOS.
 
-Same algorithm as Stage 1, now with library machinery on
-[Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
-(494MB weights, ungated):
+Currently `sample()` batches answers **within one prompt** and drops finished rows from its active batch. Training processes different prompts sequentially. Cross-prompt batching was explored earlier but is not present in this checkout.
 
-- **`make_dataset()`** — 200 countdown prompts with **4** numbers (harder
-  than Stage 1's 2), each row carrying `prompt` text plus the raw `numbers`
-  / `target` the reward needs. TRL passes those extra columns through to
-  the reward function.
-- **`countdown_reward(completions, numbers, target)`** — the Stage-1
-  `reward()` adapted to chatty models: an instruct model explains instead
-  of answering, so we extract every arithmetic-looking fragment with
-  `FRAG_RE` and score the **best** one rather than the last line, plus a
-  1-shot solved example in the prompt (`(11-3)*(7-4)` = 24) to teach the
-  output format. Two bugs lived here: an early version scored only the
-  last line (reward stuck at 0), and an empty completion crashed
-  `splitlines()[-1]` at step 15 — both covered by tests now.
-- **`GRPOConfig` choices for 4GB VRAM** — `beta=0.0` drops the frozen
-  reference model entirely (saves ~1GB; also TRL's default), LoRA r=16
-  means only adapter weights get gradients/optimizer state, gradient
-  checkpointing trades compute for activation memory, bf16 halves weight
-  memory, `num_generations=4` × batch 2 keeps rollout KV-cache small, and
-  `max_completion_length=64` caps the rambling the reward then has to
-  sift through. Observed: reward mean ~0.11–0.20 early → ~0.09–0.25 late
-  (avg 0.17, max 0.26), grad norms ~1–1.7 — genuine but early-stage
-  signal; 4-number countdown at lr 5e-6 wants more than 50 steps.
-- **Reading TRL's log line** — `rewards/countdown_reward/mean` is your
-  learning curve; `frac_reward_zero_std` = fraction of groups where every
-  completion scored the same (1.0 means no learning possible that step —
-  the group-advantage concept made visible); `completions/clipped_ratio`
-  = share hitting the 64-token cap (high values mean the model rambles
-  instead of answering); `entropy` falling means the policy is
-  committing to a strategy.
+## Reward functions
 
-Resources: the
-[TRL GRPO documentation](https://huggingface.co/docs/trl/main/en/grpo_trainer)
-and [TRL repository](https://github.com/huggingface/trl) (this repo pins
-`trl>=1.14.2`; defaults quoted above, e.g. `beta=0.0`, were read off the
-installed package, so re-check if you upgrade).
+| Outcome | Shaped `reward` | Binary `exact_reward` |
+|---|---:|---:|
+| Correct value and allowed operands | 1.0 | 1.0 |
+| Valid expression, allowed operands, wrong value | 0.3 | 0.0 |
+| Parseable arithmetic with invalid operand usage | 0.1 | 0.0 |
+| Invalid expression | 0.0 | 0.0 |
 
-## Part 4 — `tests/`: what is covered and why
+These are deterministic verifiers, not learned reward models. Rewards are fixed feedback; detaching their tensors makes that explicit but does not change gradients when they already have no computation history.
 
-- `tests/test_countdown.py` — the training signal both stages share:
-  the `OverflowError` regression (huge products return `None`, never
-  raise), `**`/`//` rejection, the full 1.0/0.3/0.1/0.0 ladder, garbage
-  never raising, and puzzle solvability over 50 seeded puzzles.
-- `tests/test_grpo_llm.py` — the Stage-2 wrapper: empty/whitespace
-  completions score 0.0 without raising (the step-15 crash), and
-  best-candidate extraction beats prose (`[1.0, 1.0, 0.1]` case).
-- Run: `.venv/bin/python -m pytest tests/ -q` (7 passed) plus
-  `.venv/bin/ruff check src/ tests/`.
+Inference reports the shaped mean reward for diagnostic purposes, even when training used exact-only rewards. Use **exact accuracy** to compare solving performance across reward configurations.
 
-## Gotchas log (earned, in order)
+## The update and model roles
 
-1. Sparse reward is the default outcome, not bad luck — shaping (0.3/0.1)
-   and SFT warm-start fixed Stage 1; 1-shot prompt + candidate extraction
-   fixed Stage 2's all-zero start.
-2. Models find your reward loopholes: exponentiation (`**`), digit
-   concatenation (`262124`), echoing the target. Harden the verifier,
-   then add the test.
-3. TRL reward functions must never raise on weird completions (empty
-   strings happen); a crash at step 15 costs the whole run.
-4. Watch output paths: the first Stage-2 run wrote checkpoints to
-   `ken/ken/outputs` because the `--out` default already contained `ken/`
-   while the command ran from inside `ken/`. Checkpoints now live in
-   `outputs/` (gitignored).
+Three policies have different jobs:
 
-## Where to go next
+- **Current `net`, p:** the model receiving gradients.
+- **`old_net`:** a frozen snapshot refreshed each rollout iteration. It generates the batch and supplies the policy-ratio denominator.
+- **Reference `ref_net`, q:** the frozen post-SFT model, kept throughout RL.
 
-- 200+ Stage-2 steps, or 3-number puzzles, to steepen the curve.
-- Re-run with a small `beta` (e.g. 0.01) and a reference model to feel
-  what the KL term does to rambling.
-- Swap the reward to exact-match-only after warm-up and watch
-  `frac_reward_zero_std` — a live demo of why shaping exists.
+Answers are grouped by prompt. The usual advantage is the completion reward minus its group's mean, divided by its group's standard deviation plus a small epsilon. Each completion's advantage is broadcast over its tokens.
+
+For each stored answer token:
+
+```text
+ratio = exp(new_logp - old_logp)
+surrogate = min(ratio * advantage, clip(ratio, 1-eps, 1+eps) * advantage)
+```
+
+The policy loss is the negative masked average of the surrogate. Clipping caps the incentive for sufficiently large changes in the favorable direction; it does not impose hard bounds on token probabilities. Unfavorable changes remain penalized.
+
+With exact-only rewards, all-failure and all-success groups both have zero advantages. Only mixed groups provide a relative policy signal. A reference penalty may still contribute when advantages are zero.
+
+**Naming caveat:** the function called `grpo_step` uses a batch-wide token average, which is DAPO-like normalization. Original response-averaged GRPO gives each response equal aggregate weight. These function names describe this educational code, not full reproductions of external trainers. RLVR describes verifiable rewards, not a uniquely defined optimizer.
+
+## Available variants
+
+| `--rl-step` | Policy term | Anchor | Reward |
+|---|---|---|---|
+| `grpo` | Standardized group advantages, clipped surrogate | Sampled reference K3 | Shaped |
+| `ldw` | Clipped surrogate, length-dependent averaging | Sampled reference K3 | Shaped |
+| `rlvr` | Same token-averaged clipped update | No penalty; reference drift logged | Exact-only |
+| `rlvr_kl` | Same token-averaged clipped update | Sampled reference K3 | Exact-only |
+| `unclip_kl` | Direct ratio × advantage | Sampled reference K3 | Exact-only |
+| `rloo_kl` | Leave-one-out advantages, clipped surrogate | Sampled reference K3 | Exact-only |
+| `rms_kl` | Unclipped RMS-normalized ratio × advantage | Sampled reference K3 | Exact-only |
+| `grpo_ref_kl` | Standardized group advantages, clipped surrogate | Exact vocabulary KL(q‖p) | Exact-only |
+| `rms_ref_kl` | RMS-normalized ratio × advantage | Exact vocabulary KL(q‖p) | Exact-only |
+
+RLOO is implemented with its own update loop. Its advantage is reward minus the mean reward of the **other** answers for the prompt, without standard-deviation normalization. It retains this project's clipped token-level policy update rather than implementing an entire external RLOO trainer.
+
+LDW weights each response's token sum by `length**(-alpha)` and divides by the sum of `length**(1-alpha)`. At alpha=0 it averages tokens; at alpha=1 it averages response means. The default alpha is 0.5. Both the policy and KL terms receive that weighting.
+
+RMS variants define `z = ratio * advantage` and minimize `-mean(z) / sqrt(mean(z**2) + rms_eps)` over completion tokens. `detach_rms=False` differentiates through the denominator; setting it to `True` treats the denominator as a fixed scale for that update. Keep this setting matched in comparisons. RMS variants currently use population standard deviation (`correction=0`) for group advantages; the clipped GRPO-style variants use sample standard deviation. RMS normalization largely cancels uniform advantage rescaling, apart from numerical epsilons.
+
+## KL: value, direction, and gradients
+
+Sampled K3 uses the log probabilities of the same generated token:
+
+```python
+d = ref_logp - new_logp
+k3 = d.exp() - d - 1
+```
+
+For normalized positive distributions, its expectation under current-policy sampling equals KL(p‖q): the added ratio term has expectation 1 and cancels the subtracted 1. In training, stored tokens come from the old policy, so after updates this is a surrogate on old-policy samples.
+
+An unbiased value estimate does not automatically give an unbiased gradient when differentiated through fixed samples. In particular, under current-policy sampling, direct differentiation of this K3 expression has expected logit gradient p−q, matching KL(q‖p)'s logit gradient. Under old-policy sampling that equality need not hold exactly.
+
+The exact-reference variants explicitly calculate:
+
+```python
+kl = (log_q.exp() * (log_q - log_p)).sum(dim=-1)
+```
+
+This sums the whole next-token vocabulary at each stored prefix. Its logit gradient is p−q; gradient descent moves in the corrective direction q−p. It is exact over vocabulary entries, **not** over all possible generated trajectories.
+
+Exact-reference KL removed much of the noisy sampled-K3 spiking in our plots. Its raw magnitude is not directly comparable with the other KL direction/estimator, and a larger scalar KL does not necessarily imply a proportionally stronger gradient. Beta needs retuning for each objective.
+
+## Reading the plots and diagnostics
+
+Metrics are batch-wide and evaluated **before** their corresponding optimizer step. Two update epochs per rollout iteration produce 1,200 metric points for a 600-iteration run.
+
+- `masked_*` averages over completion tokens, excluding prompt and padding predictions from both numerator and denominator. Plain metrics include those excluded positions and may look very different.
+- `weighted_KL` uses the actual loss weighting; for token-averaged variants it matches masked KL, while LDW can differ.
+- `clip_fraction` counts completion-token ratios outside the diagnostic interval. `active_clip` counts the subset where the clipped branch actually changes the surrogate. It is explicitly zero when clipping is disabled.
+- `exact_rate` measures sampled training answers, not greedy evaluation accuracy.
+- `equal_reward_groups` includes both all-correct and all-wrong groups. It must be interpreted alongside accuracy.
+- `groups_with_exact` in terminal logs measures prompt coverage: groups containing at least one success. High answer accuracy within very few successful groups can indicate narrow specialization.
+
+The `surrogate`, `masked_adv_ratio`, and `masked_surrogate` panels are histograms of **batch means across update epochs**, not individual token distributions. Outliers and mixed training stages can obscure their central shape. A large plain-surrogate spike at zero often reflects first epochs: ratio=1 and centered advantages cancel across equally sized padded rows. Completion masking introduces unequal response-length weights, so the same cancellation need not occur in masked metrics. Zero scalar loss does not imply zero gradient.
+
+`diagnose` compares greedy accuracy, individual sampled accuracy, and the fraction of puzzles with at least one correct answer among 12 samples. It also reports allowed-number usage separately from syntax validity, expression diversity, and greedy answers to different solvable targets using identical numbers. Changing output with target is not sufficient evidence of understanding; the expressions must also reach those targets.
+
+## What the experiments showed
+
+The main empirical pattern was an interaction between reward and anchoring:
+
+1. Shaped rewards frequently led to short, valid-but-wrong expressions, earning 0.3 without learning to hit the target.
+2. Exact-only rewards removed that shortcut but were extremely sparse on four-number puzzles. Three numbers provided more successful rollouts.
+3. Exact-only rewards with a frozen reference penalty generally outperformed the early no-KL runs and preserved syntax better.
+4. Mixed-length SFT allowed shorter answers but did not itself solve target conditioning. Under shaped reward, training concentrated on valid two-number expressions.
+5. More warm-up improved operand usage and downstream accuracy. Gains were substantial between 800 and 1,600 steps, then smaller by 3,200. Final single-batch SFT losses are noisy; these observations are not evidence of grokking. We adopted 2,100 steps as a practical budget.
+6. Clipping activated on a small fraction of tokens, yet removing it changed trajectories. Rare activation is not proof of irrelevance.
+7. RMS objectives learned without clipping, but differentiable versus detached RMS did not show a clear accuracy difference in the runs tried.
+8. Exact vocabulary reference KL produced smoother diagnostics and competitive accuracy; it did not uniformly improve every policy objective.
+
+Selected **historical** greedy evaluations, not a controlled leaderboard:
+
+| Configuration | Evaluation seed / count | Accuracy |
+|---|---|---:|
+| Exact-only + KL, 1,600 SFT / 300 RL | 12345 / 100,000 | 31.393% |
+| Exact-only + sampled KL, 2,100 SFT / 600 RL | 0 / 1,000 | 33.7% |
+| RLOO + sampled KL, 2,100 SFT / 600 RL | 0 / 1,000 | 36.2% |
+| Clipped policy + exact reference KL, 2,100 SFT / 600 RL | 0 / 1,000 | 37.1% |
+| RMS + sampled KL | 12345 / 1,000 | 33–35% across tested settings |
+| RMS + exact reference KL | 0 / 1,000 | 30.8% |
+
+Coefficients, SFT lengths, evaluation sets, and other settings changed during development. Do not rank unmatched rows or treat evaluation-seed changes as training replication. Larger evaluation sets refined an estimate around 31–32% for one checkpoint; they did not cause that model to improve. Runs with the same seed and increasing counts contain nested puzzle sets.
+
+Other ideas were implemented or discussed during the session but are **not currently registered in this checkout**:
+
+- **Reward-weighted CE replacing KL:** reinforces verified successes, including all-success groups. A run reached 19.4% on seed 12345 / 1,000, with roughly 90–95% equal-reward groups. Success concentrated on few puzzles; replacement of the anchor did not work well at the tested setting.
+- **RMS + rolling old-policy CE:** uses CE(old,current), equivalent in gradient to KL(old‖current). Its anchor refreshes every iteration and has zero gradient initially when old=current. Early logs showed sharply narrowing success coverage; no final result was established here.
+- **Successful-answer replay:** discussed, but not implemented. Unlike frozen-reference KL, it would reinforce solutions discovered during RL.
+- **Beta/group-size sweep:** an earlier runner tested G in {2,4,8,12,16,32}, selecting beta on validation data and fitting log(beta*) = log(c) + alpha*log(G). The 126-run default was too expensive for an initial screen. Partial G=2 results favored approximately 0.003–0.01 over 0.02; no scaling exponent was established. The runner/CLI are not in the current checkout.
+
+### Approaches we tried and set aside
+
+We tried **RWCE, rolling CE, the beta/G sweep runner, and cross-prompt batching**, but none became part of the working baseline:
+
+- **RWCE replacing reference KL:** did not work well at the tested setting. Accuracy plateaued, success concentrated on a small subset of puzzles, and validity deteriorated.
+- **Rolling old-policy CE:** did not work well in the observed early run. Success coverage narrowed sharply. Refreshing the anchor with each old-policy snapshot did not provide the protection of a fixed SFT reference; a final evaluation was not recorded.
+- **Sweep runner:** the full 126-run experiment was impractically slow on the laptop GPU (already over four hours into partial results). It did not establish the proposed beta/G scaling relationship.
+- **Cross-prompt batching:** implemented and tested, then set aside. It did not become part of the working setup; we did not establish a measured speedup or accuracy benefit. This was an execution optimization, not evidence against a policy objective.
+
+**Our practical conclusion: retain the frozen reference.** Removing it or replacing it with success imitation or a rolling anchor has not matched our strongest reference-regularized results. For subsequent experiments, frozen-reference regularization stays in the baseline unless its removal is the explicit variable under test. This is a conclusion about the configurations we tested, not proof that every RL method requires a reference model.
+
+## Next experiments and controls
+
+Use a fixed SFT budget, coefficients, rollout budget, and evaluation set when changing one component. Repeat actual training seeds before drawing conclusions from small accuracy differences. The current training-seed forwarding issue needs resolving first.
+
+For a beta/G study, keep completions per iteration and optimizer-update count fixed. With 768 completions, prompts per iteration are 768/G. This controls answer count but necessarily changes distinct prompt count; variable answer lengths also mean token/FLOP budgets are not exactly matched. Start with a small screening grid, then refine promising regions. Boundary optima and tied scores make an inferred power-law slope unreliable.
+
+Remaining weaknesses are primarily operand copying/repetition and operation/order selection, rather than stopping. Measure both before changing another loss. Evaluate target sensitivity with fixed numbers and multiple targets, and distinguish discovery (sampled solution coverage) from concentration (greedy accuracy). Do not infer a hard 40% ceiling from several related objectives sharing the same model and warm-up.
+
+## Files and checks
+
+| File | Purpose |
+|---|---|
+| `src/ken/countdown.py` | Puzzle generation, character encoding, verifier and rewards |
+| `src/ken/grpo_toy.py` | TinyGPT, warm-up, rollout collection, training and greedy inference |
+| `src/ken/rl.py` | RL update variants, objective calculations and metric recording |
+| `src/ken/diagnostics.py` | Sampled coverage, operand usage and target sensitivity |
+| `src/ken/__init__.py` | CLI and plots |
+| `src/ken/test.ipynb` | Step-by-step scratch notebook |
+| `src/ken/grpo_llm.py` | Separate TRL-based larger-model experiment; not the focus of these results |
+
+
+Background reading: [DeepSeekMath](https://arxiv.org/abs/2402.03300), [PPO](https://arxiv.org/abs/1707.06347), and [Schulman's KL estimator note](https://joschu.net/blog/kl-approx.html). The custom variants here are experiments, not claims of novel algorithms or faithful implementations of every detail in those sources.

@@ -11,3 +11,4 @@ wheels/
 
 # Training artifacts
 outputs/
+*.pt
