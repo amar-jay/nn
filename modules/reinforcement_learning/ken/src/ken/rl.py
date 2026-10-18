@@ -178,14 +178,14 @@ def rlvr_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
 
 
 def rlvr_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
-                 eps=0.2, beta=0.02, epochs=2, device="cpu"):
+                 eps=0.2, beta=0.01, epochs=2, device="cpu"):
     """Exact-reward experiment with the reference KL penalty retained.
 
     Matches rlvr_step except for beta; select_experiment pairs both with
     exact_reward so their difference isolates reference regularization.
     """
     return grpo_step(net, old_net, ref_net, opt, batch, group=group,
-                     pad_tok=pad_tok, eps=eps, beta=(1/torch.sqrt(group)), epochs=epochs,
+                     pad_tok=pad_tok, eps=eps, beta=beta, epochs=epochs,
                      device=device)
 
 
@@ -199,6 +199,52 @@ def unclip_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
     return grpo_step(net, old_net, ref_net, opt, batch, group=group,
                      pad_tok=pad_tok, eps=eps, beta=beta, epochs=epochs,
                      device=device, clip_surrogate=False)
+
+
+def rloo_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
+                 eps=0.2, beta=0.02, epochs=2, device="cpu"):
+    """RLOO-style advantage ablation with clipping, token averaging and KL.
+
+    A_i = R_i - mean(R_j for j != i), with no standard-deviation scaling.
+    The paired verifier is exact-only. This retains the existing PPO-style
+    update rather than implementing a separate full RLOO trainer.
+    """
+    seqs, plens, rewards = batch
+    if group < 2 or rewards.ndim != 1 or rewards.numel() == 0 or rewards.numel() % group:
+        raise ValueError("rewards must contain complete groups of at least two answers")
+    if epochs < 1:
+        raise ValueError("epochs must be positive")
+
+    # Each answer is compared only with the OTHER answers for its prompt.
+    grouped = rewards.reshape(-1, group)
+    others_mean = (grouped.sum(dim=1, keepdim=True) - grouped) / (group - 1)
+    adv = (grouped - others_mean).reshape(-1, 1)
+
+    with torch.no_grad():
+        old_logp, mask = _completion_logps(old_net, seqs, plens, pad_tok=pad_tok)
+        ref_logp, _ = _completion_logps(ref_net, seqs, plens, pad_tok=pad_tok)
+    n_tok = mask.sum().clamp_min(1)
+    metric_history = [[] for _ in METRIC_NAMES]
+
+    for _ in range(epochs):
+        new_logp, _ = _completion_logps(net, seqs, plens, pad_tok=pad_tok)
+        ratio = (new_logp - old_logp).exp()
+        surr = torch.min(ratio * adv,
+                         ratio.clamp(1 - eps, 1 + eps) * adv)
+        kl_logp = new_logp if beta != 0 else new_logp.detach()
+        d = ref_logp - kl_logp
+        kl = d.exp() - d - 1
+        loss = -(surr * mask).sum() / n_tok
+        if beta != 0:
+            loss = loss + beta * (kl * mask).sum() / n_tok
+
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        _record_metrics(metric_history, ratio, adv, surr, kl, mask,
+                        rewards, group, eps)
+
+    return float(loss.detach()), tuple(metric_history)
 
 
 def rl_step(*args, **kwargs):
@@ -216,6 +262,7 @@ def select_experiment(rl_step="grpo"):
         "rlvr": (rlvr_step, exact_reward),
         "rlvr_kl": (rlvr_kl_step, exact_reward),
         "unclip_kl": (unclip_kl_step, exact_reward),
+        "rloo_kl": (rloo_kl_step, exact_reward),
     }
     if rl_step not in experiments:
         raise ValueError(f"Unknown RL step: {rl_step}. Choose {', '.join(experiments)}.")
