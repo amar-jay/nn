@@ -51,23 +51,36 @@ class TinyGPT(nn.Module):
 
 @torch.no_grad()
 def sample(net: TinyGPT, prompt_ids: list[int], n: int, max_new: int = 24) -> list[list[int]]:
+    """Sample n answers together, removing finished rows from the active batch."""
+    if n < 0 or max_new < 0:
+        raise ValueError("n and max_new must be nonnegative")
+    if n == 0:
+        return []
+    if not prompt_ids:
+        raise ValueError("prompt_ids must not be empty")
     device = next(net.parameters()).device
-    seqs = []
-    for _ in range(n):
-        ids = list(prompt_ids)
-        for _ in range(max_new):
-            inp = torch.tensor([ids[-64:]], device=device)
-            probs = F.softmax(net(inp)[0, -1], dim=-1)
-            tok = int(torch.multinomial(probs, 1))
-            if tok == EOS:
-                break
-            ids.append(tok)
-        seqs.append(ids)
-    return seqs
+    plen = len(prompt_ids)
+    ids = torch.full((n, plen + max_new), PAD, device=device, dtype=torch.long)
+    ids[:, :plen] = torch.tensor(prompt_ids, device=device)
+    lengths = torch.full((n,), plen + max_new, device=device, dtype=torch.long)
+    active = torch.arange(n, device=device)
+    for step in range(max_new):
+        end = plen + step
+        inp = ids[active, max(0, end - 64):end]
+        probs = F.softmax(net(inp)[:, -1], dim=-1)
+        tokens = torch.multinomial(probs, 1).squeeze(-1)
+        ids[active, end] = tokens  # Retain EOS for the RL loss.
+        finished = tokens == EOS
+        lengths[active[finished]] = end + 1
+        active = active[~finished]
+        if active.numel() == 0:
+            break
+    rows = ids.cpu().tolist()
+    return [row[:length] for row, length in zip(rows, lengths.cpu().tolist())]
 
 
 
-def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: int = 32):
+def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: int = 64):
     """SFT warm-start: teach expression *format* so GRPO has signal to amplify.
 
     Pure RL from a random policy almost never emits a parseable expression
@@ -103,13 +116,27 @@ def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: i
     print(f"sft done, final loss {float(loss.detach()):.4f}", flush=True)
 
 
-def train(iters=300, prompts_per_iter=16, group=12, seed=0, n_numbers=2, sft_steps=400):
+def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=2,
+          sft_steps=400, sft_batch=64, device="cuda"):
+    """Train on fresh puzzles each iteration; larger batches cover more puzzles."""
+    device = torch.device(device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError(
+            "GPU training requested, but CUDA is unavailable. Check that "
+            "nvidia-smi works and the NVIDIA driver is running. "
+            "For explicit CPU training, call train(device='cpu')."
+        )
     torch.manual_seed(seed)
     random.seed(seed)
     rng = random.Random(seed)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     net = TinyGPT().to(device)
-    pretrain_format(net, rng, steps=sft_steps)
+    print(f"Training on {device}" +
+          (f" ({torch.cuda.get_device_name(device)})" if device.type == "cuda" else ""),
+          flush=True)
+    print(f"SFT: {sft_steps * sft_batch:,} examples; RL: "
+          f"{prompts_per_iter} puzzles x {group} answers per iteration "
+          f"({iters * prompts_per_iter:,} generated puzzles total)", flush=True)
+    pretrain_format(net, rng, steps=sft_steps, batch=sft_batch)
     ref_net = copy.deepcopy(net).eval()
     for p in ref_net.parameters():
         p.requires_grad_(False)
