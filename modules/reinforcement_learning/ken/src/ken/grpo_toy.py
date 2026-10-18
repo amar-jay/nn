@@ -124,7 +124,7 @@ def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: i
 
 def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=4,
           sft_steps=400, sft_batch=64, device="cuda", max_new=48,
-          rl_step="grpo"):
+          rl_step="grpo", diagnostic_count=32):
     """Train on fresh puzzles each iteration; larger batches cover more puzzles."""
     update_step, reward_fn = select_experiment(rl_step)
     device = torch.device(device)
@@ -146,6 +146,12 @@ def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=4,
           f"({iters * prompts_per_iter:,} generated puzzles total)", flush=True)
     print(f"Using RL step: {update_step.__name__} | reward: {reward_fn.__name__}")
     pretrain_format(net, rng, steps=sft_steps, batch=sft_batch, n_numbers=n_numbers)
+    # if diagnostic_count > 0:
+    #     from .diagnostics import evaluate_model, print_report
+    #     before_rl = evaluate_model(net, count=diagnostic_count, n_numbers=n_numbers,
+    #                                max_new=max_new, target_sets=0)
+    #     print("After warm-up, before RL:")
+    #     print_report(before_rl)
     ref_net = copy.deepcopy(net).eval()
     for p in ref_net.parameters():
         p.requires_grad_(False)
@@ -173,6 +179,12 @@ def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=4,
             print(f"iter {it:3d} loss {loss:+.4f} mean_r {rws_t.mean():.3f} "
                   f"exact {exact:.2f} groups_with_exact {successful_groups:.2f}", flush=True)
     torch.save(net.state_dict(), "grpo_toy.pt")
+    # if diagnostic_count:
+    #     after_rl = evaluate_model(net, count=diagnostic_count, n_numbers=n_numbers,
+    #                               max_new=max_new, target_sets=0)
+    #     print("After RL (same diagnostic puzzles):")
+    #     print_report(after_rl)
+
 
     # show one greedy decode per fresh puzzle
     net.eval()
@@ -194,12 +206,9 @@ def infer(count=100, model_path="grpo_toy.pt", seed=12345, n_numbers=4,
     """Reproducible greedy evaluation; return detailed results and summary.
 
     A separate puzzle RNG makes checkpoint comparisons use identical puzzles.
-    ``show`` limits printed examples, not the number evaluated. ``output``
-    optionally saves the full report as JSON.
+    ``show`` limits printed examples, not the number evaluated.
     """
-    import json
     from collections import Counter
-    from pathlib import Path
     from .countdown import safe_eval
 
     if count < 1 or n_numbers < 2 or max_new < 1 or show < 0:

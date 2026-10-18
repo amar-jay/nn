@@ -99,9 +99,9 @@ def test_rlvr_update_is_independent_of_reference(monkeypatch):
     assert outcomes[0][2][index] != outcomes[1][2][index]
 
 
-def test_unclipped_kl_uses_unclipped_surrogate_outside_bounds(monkeypatch):
+def test_unclip_kl_uses_unclipped_surrogate_outside_bounds(monkeypatch):
     from ken.countdown import exact_reward
-    assert rl.select_experiment('unclipped_kl') == (rl.unclipped_kl_step, exact_reward)
+    assert rl.select_experiment('unclip_kl') == (rl.unclip_kl_step, exact_reward)
     model = nn.Linear(1, 1, bias=False)
     with torch.no_grad():
         model.weight.fill_(0.0)
@@ -116,7 +116,7 @@ def test_unclipped_kl_uses_unclipped_surrogate_outside_bounds(monkeypatch):
 
     monkeypatch.setattr(rl, '_completion_logps', logps)
     batch = ([[3, 4], [3, 5]], [1, 1], torch.tensor([1., 0.]))
-    _, histories = rl.unclipped_kl_step(model, old, ref,
+    _, histories = rl.unclip_kl_step(model, old, ref,
                                 torch.optim.SGD(model.parameters(), lr=0),
                                 batch, group=2, epochs=1, beta=0)
     adv = (batch[2] - batch[2].mean()) / (batch[2].std() + 1e-4)

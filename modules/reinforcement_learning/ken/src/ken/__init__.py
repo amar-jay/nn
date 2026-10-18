@@ -21,17 +21,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="ken")
     commands = parser.add_subparsers(dest="command", required=True)
     training = commands.add_parser("train")
-    training.add_argument("--numbers", type=int, default=4)
+    training.add_argument("--numbers", type=int, default=3)
+    training.add_argument("--seed", type=int, default=12345)
     training.add_argument("--rl-step", "--rl_step",
                           choices=["grpo", "ldw", "rlvr", "rlvr_kl", "unclip_kl"], default="grpo")
     evaluation = commands.add_parser("infer", help="Evaluate a saved checkpoint")
     evaluation.add_argument("--count", type=int, default=100)
-    evaluation.add_argument("--numbers", type=int, default=4)
+    evaluation.add_argument("--numbers", type=int, default=3)
     evaluation.add_argument("--show", type=int, default=20)
     evaluation.add_argument("--seed", type=int, default=12345)
+    diagnostics = commands.add_parser("diagnose", help="Target sensitivity and sampled exploration")
+    diagnostics.add_argument("--numbers", type=int, default=3)
+    diagnostics.add_argument("--count", type=int, default=100)
+    diagnostics.add_argument("--samples", type=int, default=12)
+    diagnostics.add_argument("--seed", type=int, default=12345)
     args = parser.parse_args()
     if args.command == "train":
-        show_metrics(train(n_numbers=args.numbers, rl_step=args.rl_step))
+        show_metrics(train(n_numbers=args.numbers, rl_step=args.rl_step,
+                           sft_steps=800))
+    elif args.command == "diagnose":
+        from ken.diagnostics import diagnose
+        diagnose(n_numbers=args.numbers, count=args.count, 
+                 samples=args.samples, seed=args.seed)
     else:
         infer(count=args.count,
               n_numbers=args.numbers,

@@ -19,14 +19,14 @@ def _completion_logps(net: torch.nn.Module, seqs: list[list[int]], plens: list[i
 
 
 METRIC_NAMES = (
-    "ratio", "adv_ratio", "surrogate", "KL",
+    "ratio", "active_clip", "surrogate", "KL",
     "masked_ratio", "masked_adv_ratio", "masked_surrogate", "masked_KL",
     "exact_rate", "equal_reward_groups", "weighted_KL", "clip_fraction",
 )
 
 
 def _record_metrics(history, ratio, adv, surr, kl, mask, rewards, group, eps,
-                    weights=None):
+                    weights=None, clip_surrogate=True):
     """Record pre-step batch metrics; masked means exclude prompt and padding."""
     with torch.no_grad():
         count = mask.sum().clamp_min(1)
@@ -36,8 +36,12 @@ def _record_metrics(history, ratio, adv, surr, kl, mask, rewards, group, eps,
             weights = torch.ones_like(mask[:, 0])
         weighted_mask = mask * weights[:, None]
         grouped = rewards.reshape(-1, group)
+        active_clip = (((ratio > 1 + eps) & (adv > 0)) |
+                       ((ratio < 1 - eps) & (adv < 0)))
+        if not clip_surrogate:
+            active_clip = torch.zeros_like(active_clip)
         values = (
-            ratio.mean(), (ratio * adv).mean(), surr.mean(), kl.mean(),
+            ratio.mean(), completion_mean(active_clip.float()), surr.mean(), kl.mean(),
             completion_mean(ratio), completion_mean(ratio * adv),
             completion_mean(surr), completion_mean(kl),
             (rewards >= 1.0).float().mean(),
@@ -93,7 +97,7 @@ def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, b
         opt.step()
 
         _record_metrics(metric_history, ratio, adv[:, None], unmasked_surr, kl,
-                        mask, rwd_t, group, eps)
+                        mask, rwd_t, group, eps, clip_surrogate=clip_surrogate)
 
 
     return float(loss.detach()), tuple(metric_history)
@@ -181,7 +185,7 @@ def rlvr_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
     exact_reward so their difference isolates reference regularization.
     """
     return grpo_step(net, old_net, ref_net, opt, batch, group=group,
-                     pad_tok=pad_tok, eps=eps, beta=beta, epochs=epochs,
+                     pad_tok=pad_tok, eps=eps, beta=(1/torch.sqrt(group)), epochs=epochs,
                      device=device)
 
 
@@ -211,7 +215,7 @@ def select_experiment(rl_step="grpo"):
         "ldw": (ldw_step, reward),
         "rlvr": (rlvr_step, exact_reward),
         "rlvr_kl": (rlvr_kl_step, exact_reward),
-        "unclipped_kl": (unclip_kl_step, exact_reward),
+        "unclip_kl": (unclip_kl_step, exact_reward),
     }
     if rl_step not in experiments:
         raise ValueError(f"Unknown RL step: {rl_step}. Choose {', '.join(experiments)}.")
