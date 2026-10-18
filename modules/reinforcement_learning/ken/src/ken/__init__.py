@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 from ken.grpo_toy import train, infer
-from ken.rl import METRIC_NAMES
+from ken.rl import METRIC_NAMES, experiments
 
 def show_metrics(metrics):
     if len(metrics) != len(METRIC_NAMES):
@@ -32,7 +32,7 @@ def main() -> None:
     training.add_argument("--numbers", type=int, default=3)
     training.add_argument("--seed", type=int, default=12345)
     training.add_argument("--rl-step", "--rl_step",
-                          choices=["grpo", "ldw", "rlvr", "rlvr_kl", "unclip_kl", "rloo_kl", "rms_kl", "grpo_ref_kl", "rms_ref_kl"], default="grpo")
+                          choices=list(experiments.keys()), default="grpo")
     evaluation = commands.add_parser("infer", help="Evaluate a saved checkpoint")
     evaluation.add_argument("--count", type=int, default=100)
     evaluation.add_argument("--numbers", type=int, default=3)

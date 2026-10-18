@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-# from .grpo_toy import PAD
+from ken.countdown import exact_reward, reward
 
 def _completion_logps(net: torch.nn.Module, seqs: list[list[int]], plens: list[int], pad_tok: int=2,
                       return_distribution=False):
@@ -393,21 +393,21 @@ def rl_step(*args, **kwargs):
 rl_step.name = grpo_step.__name__
 
 
+
+experiments = {
+    "grpo": (grpo_step, reward),
+    "ldw": (ldw_step, reward),
+    "rlvr": (rlvr_step, exact_reward),
+    "rlvr_kl": (rlvr_kl_step, exact_reward), # this is basically grpo_step with an exact_reward verifier and beta=0.01
+    "unclip_kl": (unclip_kl_step, exact_reward),
+    "rloo_kl": (rloo_kl_step, exact_reward),
+    "rms_kl": (rms_kl_step, exact_reward),
+    "rms_ref_kl": (rms_ref_kl_step, exact_reward),
+    "grpo_ref_kl": (grpo_ref_kl_step, exact_reward),
+}
+
 def select_experiment(rl_step="grpo"):
     """Select an RL update and its paired verifier reward together."""
-    from .countdown import exact_reward, reward
-
-    experiments = {
-        "grpo": (grpo_step, reward),
-        "ldw": (ldw_step, reward),
-        "rlvr": (rlvr_step, exact_reward),
-        "rlvr_kl": (rlvr_kl_step, exact_reward),
-        "unclip_kl": (unclip_kl_step, exact_reward),
-        "rloo_kl": (rloo_kl_step, exact_reward),
-        "rms_kl": (rms_kl_step, exact_reward),
-        "rms_ref_kl": (rms_ref_kl_step, exact_reward),
-        "grpo_ref_kl": (grpo_ref_kl_step, exact_reward),
-    }
     if rl_step not in experiments:
         raise ValueError(f"Unknown RL step: {rl_step}. Choose {', '.join(experiments)}.")
     return experiments[rl_step]
