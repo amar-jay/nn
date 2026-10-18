@@ -68,3 +68,32 @@ def test_metrics_use_whole_batch_and_completion_denominator():
     assert metrics['exact_rate'] == 0.5
     assert metrics['equal_reward_groups'] == 0.0
     assert metrics['clip_fraction'] == pytest.approx(2 / 3)
+
+
+def test_rlvr_update_is_independent_of_reference(monkeypatch):
+    mask = torch.tensor([[1., 0.], [1., 1.]])
+    batch = ([[3, 4], [3, 4, 5]], [1, 1], torch.tensor([1., 0.]))
+    outcomes = []
+    for reference_value in [-0.2, 1.0]:
+        current = nn.Linear(1, 1, bias=False)
+        old, ref = object(), object()
+        with torch.no_grad():
+            current.weight.fill_(0.1)
+
+        def logps(model, seqs, plens, pad_tok=2):
+            if model is current:
+                return current.weight.expand(2, 2), mask
+            value = 0.0 if model is old else reference_value
+            return torch.full((2, 2), value), mask
+
+        monkeypatch.setattr(rl, '_completion_logps', logps)
+        loss, histories = rl.rlvr_step(
+            current, old, ref, torch.optim.SGD(current.parameters(), lr=0.1),
+            batch, group=2, epochs=1,
+        )
+        outcomes.append((loss, current.weight.item(), histories))
+    assert outcomes[0][0] == pytest.approx(outcomes[1][0])
+    assert outcomes[0][1] == pytest.approx(outcomes[1][1])
+    # Reference metrics still show drift despite having no optimization effect.
+    index = rl.METRIC_NAMES.index('weighted_KL')
+    assert outcomes[0][2][index] != outcomes[1][2][index]

@@ -50,7 +50,7 @@ class TinyGPT(nn.Module):
 
 
 @torch.no_grad()
-def sample(net: TinyGPT, prompt_ids: list[int], n: int, max_new: int = 24) -> list[list[int]]:
+def sample(net: TinyGPT, prompt_ids: list[int], n: int, max_new: int = 48) -> list[list[int]]:
     """Sample n answers together, removing finished rows from the active batch."""
     if n < 0 or max_new < 0:
         raise ValueError("n and max_new must be nonnegative")
@@ -60,13 +60,15 @@ def sample(net: TinyGPT, prompt_ids: list[int], n: int, max_new: int = 24) -> li
         raise ValueError("prompt_ids must not be empty")
     device = next(net.parameters()).device
     plen = len(prompt_ids)
+    if hasattr(net, "pos") and plen + max_new > net.pos.num_embeddings:
+        raise ValueError("prompt plus max_new exceeds the model context capacity")
     ids = torch.full((n, plen + max_new), PAD, device=device, dtype=torch.long)
     ids[:, :plen] = torch.tensor(prompt_ids, device=device)
     lengths = torch.full((n,), plen + max_new, device=device, dtype=torch.long)
     active = torch.arange(n, device=device)
     for step in range(max_new):
         end = plen + step
-        inp = ids[active, max(0, end - 64):end]
+        inp = ids[active, :end]
         probs = F.softmax(net(inp)[:, -1], dim=-1)
         tokens = torch.multinomial(probs, 1).squeeze(-1)
         ids[active, end] = tokens  # Retain EOS for the RL loss.
@@ -80,11 +82,13 @@ def sample(net: TinyGPT, prompt_ids: list[int], n: int, max_new: int = 24) -> li
 
 
 
-def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: int = 64):
+def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: int = 64, n_numbers: int = 4):
     """SFT warm-start: teach expression *format* so GRPO has signal to amplify.
 
     Pure RL from a random policy almost never emits a parseable expression
     (reward stays 0.000) - the same reason real pipelines do SFT before RL.
+    Keep all puzzle numbers in the prompt, but uniformly choose an expression
+    operand count from 2 through n_numbers to demonstrate optional subsets.
     """
     device = next(net.parameters()).device
     opt = torch.optim.AdamW(net.parameters(), lr=3e-4)
@@ -92,9 +96,11 @@ def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: i
     for step in range(steps):
         seqs, plens = [], []
         for _ in range(batch):
-            numbers, target = generate_puzzle(rng, 2)
+            numbers, target = generate_puzzle(rng, n_numbers)
             pids = encode(prompt_for(numbers, target))
-            eids = encode(random_valid_expr(numbers, rng)) + [EOS]
+            operand_count = rng.randint(2, len(numbers))
+            operands = rng.sample(numbers, operand_count)
+            eids = encode(random_valid_expr(operands, rng)) + [EOS]
             seqs.append(pids + eids)
             plens.append(len(pids))
         maxlen = max(len(s) for s in seqs)
@@ -116,8 +122,8 @@ def pretrain_format(net: TinyGPT, rng: random.Random, steps: int = 400, batch: i
     print(f"sft done, final loss {float(loss.detach()):.4f}", flush=True)
 
 
-def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=2,
-          sft_steps=400, sft_batch=64, device="cuda"):
+def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=4,
+          sft_steps=400, sft_batch=64, device="cuda", max_new=48):
     """Train on fresh puzzles each iteration; larger batches cover more puzzles."""
     device = torch.device(device)
     if device.type == "cuda" and not torch.cuda.is_available():
@@ -136,7 +142,8 @@ def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=2,
     print(f"SFT: {sft_steps * sft_batch:,} examples; RL: "
           f"{prompts_per_iter} puzzles x {group} answers per iteration "
           f"({iters * prompts_per_iter:,} generated puzzles total)", flush=True)
-    pretrain_format(net, rng, steps=sft_steps, batch=sft_batch)
+    print(f"Using RL step: {rl_step.name}")
+    pretrain_format(net, rng, steps=sft_steps, batch=sft_batch, n_numbers=n_numbers)
     ref_net = copy.deepcopy(net).eval()
     for p in ref_net.parameters():
         p.requires_grad_(False)
@@ -149,7 +156,7 @@ def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=2,
         seqs, plens, rws = [], [], []
         for numbers, target in puzzles:
             pids = encode(prompt_for(numbers, target))
-            rollout = sample(old_net, pids, group)
+            rollout = sample(old_net, pids, group, max_new=max_new)
             for s in rollout:
                 seqs.append(s)
                 plens.append(len(pids))
@@ -169,8 +176,8 @@ def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=2,
         for _ in range(3):
             numbers, target = generate_puzzle(rng, n_numbers)
             ids = encode(prompt_for(numbers, target))
-            for _ in range(24):
-                inp = torch.tensor([ids[-64:]], device=device)
+            for _ in range(max_new):
+                inp = torch.tensor([ids], device=device)
                 nxt = int(net(inp)[0, -1].argmax())
                 if nxt == EOS:
                     break
@@ -178,32 +185,72 @@ def train(iters=300, prompts_per_iter=64, group=12, seed=0, n_numbers=2,
             print(f"{numbers} -> {target} | {decode(ids[len(encode(prompt_for(numbers, target))) :])}")
     return metric_history
 
-def infer(count=3) -> str:
-    model_path = "grpo_toy.pt"
-    rng = random.Random(0)
-    n_numbers = 2
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+def infer(count=100, model_path="grpo_toy.pt", seed=12345, n_numbers=4,
+          max_new=48, device=None, show=20):
+    """Reproducible greedy evaluation; return detailed results and summary.
+
+    A separate puzzle RNG makes checkpoint comparisons use identical puzzles.
+    ``show`` limits printed examples, not the number evaluated. ``output``
+    optionally saves the full report as JSON.
+    """
+    import json
+    from collections import Counter
+    from pathlib import Path
+    from .countdown import safe_eval
+
+    if count < 1 or n_numbers < 2 or max_new < 1 or show < 0:
+        raise ValueError("count/max_new must be positive, n_numbers >= 2, show >= 0")
+    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     net = TinyGPT().to(device)
-    net.load_state_dict(torch.load(model_path, map_location=device))
-
-    total_reward = 0.0
-
+    net.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     net.eval()
+    rng = random.Random(seed)
+    results = []
+    labels = {1.0: "exact", 0.3: "wrong_result", 0.1: "disallowed_numbers", 0.0: "invalid_expression"}
+    print(f"Checkpoint: {model_path} | device: {device} | greedy | seed: {seed}")
     with torch.no_grad():
-        for _ in range(count):
+        for index in range(count):
             numbers, target = generate_puzzle(rng, n_numbers)
             prompt_ids = encode(prompt_for(numbers, target))
+            if len(prompt_ids) + max_new > net.pos.num_embeddings:
+                raise ValueError("prompt plus max_new exceeds the model context capacity")
             ids = prompt_ids.copy()
-            for _ in range(24):
-                inp = torch.tensor([ids[-64:]], device=device)
-                nxt = int(net(inp)[0, -1].argmax())
-                if nxt == EOS:
+            stopped = False
+            for _ in range(max_new):
+                inp = torch.tensor([ids], device=device)
+                token = int(net(inp)[0, -1].argmax())
+                ids.append(token)
+                if token == EOS:
+                    stopped = True
                     break
-                ids.append(nxt)
-            completion = decode(ids[len(prompt_ids) :])
-            r = reward(completion, numbers, target)
-            print(f"{numbers} -> {target} | {completion} | reward: {r==1}")
-            total_reward += r
-    print(f"Average reward over {count} puzzles: {total_reward / count:.3f}")
+            completion = decode(ids[len(prompt_ids):])
+            score = reward(completion, numbers, target)
+            value = safe_eval(completion)
+            result = dict(numbers=numbers, target=target, expression=completion,
+                          value=value, reward=score, status=labels[score],
+                          generated_tokens=len(ids) - len(prompt_ids),
+                          stopped_on_eos=stopped)
+            results.append(result)
+            if index < show:
+                ending = "EOS" if stopped else "LENGTH LIMIT"
+                print(f"{index + 1:4d} | {numbers} -> {target} | {completion!r} "
+                      f"= {value} | {labels[score]} | {ending}")
+    counts = Counter(row["status"] for row in results)
+    summary = dict(
+        count=count, exact_rate=counts["exact"] / count,
+        mean_reward=sum(row["reward"] for row in results) / count,
+        status_counts={label: counts[label] for label in labels.values()},
+        eos_rate=sum(row["stopped_on_eos"] for row in results) / count,
+        mean_generated_tokens=sum(row["generated_tokens"] for row in results) / count,
+    )
+    report = dict(checkpoint=str(model_path), seed=seed, n_numbers=n_numbers,
+                  max_new=max_new, decoding="greedy", summary=summary, results=results)
+    print(f"\nExact: {summary['exact_rate']:.1%} ({counts['exact']}/{count}) | "
+          f"mean reward: {summary['mean_reward']:.3f}")
+    print("Outcomes:", summary["status_counts"])
+    print(f"Stopped on EOS: {summary['eos_rate']:.1%} | "
+          f"mean generated tokens (including EOS): {summary['mean_generated_tokens']:.2f}")
+    return report
+
 if __name__ == "__main__":
     train()

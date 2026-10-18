@@ -51,9 +51,6 @@ def _record_metrics(history, ratio, adv, surr, kl, mask, rewards, group, eps,
 
 # --------------- TRYOUTS ---------------
 
-def rl_step(*args, **kwargs):
-    return ldw_step(*args, **kwargs)
-
 def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, beta=0.02, epochs=2, device="cpu"):
     seqs, plens, rwd_t = batch
 
@@ -79,9 +76,14 @@ def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, b
 
         masked_adv = adv[:, None] * mask
         surr = torch.min(ratio * masked_adv, ratio.clamp(1 - eps, 1 + eps) * masked_adv)
-        kl = torch.exp(ref_logp - new_logp) - (ref_logp - new_logp) - 1  # k3 estimator
+        # With beta=0, retain reference drift as a diagnostic only.
+        kl_logp = new_logp if beta != 0 else new_logp.detach()
+        d = ref_logp - kl_logp
+        kl = d.exp() - d - 1
 
-        loss = -(surr * mask).sum() / n_tok + beta * (kl * mask).sum() / n_tok 
+        loss = -(surr * mask).sum() / n_tok
+        if beta != 0:
+            loss = loss + beta * (kl * mask).sum() / n_tok
 
         opt.zero_grad()
         loss.backward()
@@ -153,3 +155,23 @@ def ldw_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, be
 
 
     return float(loss.detach()), tuple(metric_history)
+
+
+def rlvr_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
+              eps=0.2, epochs=2, device="cpu"):
+    """No-reference-penalty ablation of grpo_step, using verifier rewards.
+
+    RLVR describes the reward source, not a distinct optimization algorithm.
+    This experiment changes only beta to zero: group advantages, clipping,
+    token normalization, and sampling stay the same. Reference KL is still
+    logged for comparison but has no effect on gradients. Reward shaping
+    remains whatever the caller's verifier supplies.
+    """
+    return grpo_step(net, old_net, ref_net, opt, batch, group=group,
+                     pad_tok=pad_tok, eps=eps, beta=0.0, epochs=epochs,
+                     device=device)
+
+
+def rl_step(*args, **kwargs):
+    return rlvr_step(*args, **kwargs)
+rl_step.name = rlvr_step.__name__

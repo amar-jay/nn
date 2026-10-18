@@ -80,9 +80,14 @@ def safe_eval(expr: str) -> float | None:
     return val if math.isfinite(val) else None
 
 def random_valid_expr(numbers: list[int], rng: random.Random) -> str:
-    a, b = rng.sample(numbers, 2)
-    e = f"{a}{rng.choice(['+', '-', '*'])}{b}"
-    return f"({e})" if rng.random() < 0.3 else e
+    """Random well-formed expression using all supplied numbers, not a solution."""
+    operands = rng.sample(numbers, len(numbers))
+    e = str(operands[0])
+    for operand in operands[1:]:
+        op = rng.choice(OPS)
+        e = f"({e}{op}{operand})"
+    return e
+
 
 
 def reward(expr: str, numbers: list[int], target: int) -> float:
