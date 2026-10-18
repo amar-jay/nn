@@ -248,10 +248,11 @@ def rloo_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
 
 
 def rms_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
-                eps=0.2, beta=0.02, epochs=2, device="cpu", rms_eps=1e-6):
+                eps=0.2, beta=0.02, epochs=2, device="cpu", rms_eps=1e-6, detach_rms=False):
     """Unclipped -mean(r*A / RMS(r*A)) plus reference KL.
 
-    RMS is computed over completion tokens and remains differentiable.
+    RMS is computed over completion tokens. Set detach_rms=True to treat
+    its denominator as a fixed scale during backpropagation.
     Advantages use the same group mean/std as rlvr_kl. eps is only the
     diagnostic ratio threshold; rms_eps stabilizes the normalization.
     """
@@ -261,8 +262,8 @@ def rms_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
     if epochs < 1 or rms_eps <= 0:
         raise ValueError("epochs and rms_eps must be positive")
     grouped = rewards.reshape(-1, group)
-    adv = ((grouped - grouped.mean(dim=1, keepdim=True)) /
-           (grouped.std(dim=1, keepdim=True, correction=0) + 1e-4)).reshape(-1, 1)
+    adv = ((grouped - grouped.mean(dim=1, keepdim=True))
+        / (grouped.std(dim=1, keepdim=True, correction=0) + 1e-4)).reshape(-1, 1)#.detach()
     with torch.no_grad():
         old_logp, mask = _completion_logps(old_net, seqs, plens, pad_tok=pad_tok)
         ref_logp, _ = _completion_logps(ref_net, seqs, plens, pad_tok=pad_tok)
@@ -276,8 +277,10 @@ def rms_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
         z = ratio * adv
         z_valid = z[valid]
         rms = (z_valid.square().mean() + rms_eps).sqrt()
+        if detach_rms:
+            rms = rms.detach()
         normalized = z / rms
-        policy_loss = -(z_valid / rms).mean()
+        policy_loss = -z_valid.mean() / rms
         kl_logp = new_logp if beta != 0 else new_logp.detach()
         d = ref_logp - kl_logp
         kl = d.exp() - d - 1
