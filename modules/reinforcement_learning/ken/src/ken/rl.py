@@ -51,7 +51,7 @@ def _record_metrics(history, ratio, adv, surr, kl, mask, rewards, group, eps,
 
 # --------------- TRYOUTS ---------------
 
-def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, beta=0.02, epochs=2, device="cpu"):
+def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, beta=0.02, epochs=2, device="cpu", clip_surrogate=True):
     seqs, plens, rwd_t = batch
 
     # group-normalized advantages (the heart of GRPO: no value network)
@@ -75,7 +75,10 @@ def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, b
         ratio = torch.exp(new_logp - old_logp)
 
         masked_adv = adv[:, None] * mask
-        surr = torch.min(ratio * masked_adv, ratio.clamp(1 - eps, 1 + eps) * masked_adv)
+        raw_surr = ratio * adv[:, None]
+        unmasked_surr = (torch.min(raw_surr, ratio.clamp(1 - eps, 1 + eps) * adv[:, None])
+                         if clip_surrogate else raw_surr)
+        surr = unmasked_surr * mask
         # With beta=0, retain reference drift as a diagnostic only.
         kl_logp = new_logp if beta != 0 else new_logp.detach()
         d = ref_logp - kl_logp
@@ -89,8 +92,6 @@ def grpo_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2, eps=0.2, b
         loss.backward()
         opt.step()
 
-        unmasked_surr = torch.min(ratio * adv[:, None],
-                                  ratio.clamp(1 - eps, 1 + eps) * adv[:, None])
         _record_metrics(metric_history, ratio, adv[:, None], unmasked_surr, kl,
                         mask, rwd_t, group, eps)
 
@@ -172,6 +173,30 @@ def rlvr_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
                      device=device)
 
 
+def rlvr_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
+                 eps=0.2, beta=0.02, epochs=2, device="cpu"):
+    """Exact-reward experiment with the reference KL penalty retained.
+
+    Matches rlvr_step except for beta; select_experiment pairs both with
+    exact_reward so their difference isolates reference regularization.
+    """
+    return grpo_step(net, old_net, ref_net, opt, batch, group=group,
+                     pad_tok=pad_tok, eps=eps, beta=beta, epochs=epochs,
+                     device=device)
+
+
+def unclip_kl_step(net, old_net, ref_net, opt, batch, group=12, pad_tok=2,
+               eps=0.2, beta=0.02, epochs=2, device="cpu"):
+    """Unclipped r*A ablation of rlvr_kl_step, with exact rewards and KL.
+
+    eps only defines the diagnostic out-of-bounds fraction in this variant;
+    it does not restrict the policy surrogate.
+    """
+    return grpo_step(net, old_net, ref_net, opt, batch, group=group,
+                     pad_tok=pad_tok, eps=eps, beta=beta, epochs=epochs,
+                     device=device, clip_surrogate=False)
+
+
 def rl_step(*args, **kwargs):
     return grpo_step(*args, **kwargs)
 rl_step.name = grpo_step.__name__
@@ -185,7 +210,9 @@ def select_experiment(rl_step="grpo"):
         "grpo": (grpo_step, reward),
         "ldw": (ldw_step, reward),
         "rlvr": (rlvr_step, exact_reward),
+        "rlvr_kl": (rlvr_kl_step, exact_reward),
+        "unclipped_kl": (unclip_kl_step, exact_reward),
     }
     if rl_step not in experiments:
-        raise ValueError(f"Unknown RL step: {rl_step}. Choose grpo, ldw, or rlvr.")
+        raise ValueError(f"Unknown RL step: {rl_step}. Choose {', '.join(experiments)}.")
     return experiments[rl_step]
