@@ -1,8 +1,8 @@
-# ken — a small lab for reinforcement-learning experiments
+# ken
 
 Countdown is the test environment, not the research objective. This project uses a small character-level transformer and a verifiable arithmetic task to study how reward design, advantage estimation, normalization, clipping, and regularization change learning. The aim is to make experiments understandable and affordable on a laptop GPU before introducing a larger model or more complicated task.
 
-The results below are observations from our learning sessions, not benchmark claims. Most variants have only one training seed; apparent rankings need replication.
+The results below are observations from our learning sessions, not benchmark claims. All variants have only one training seed; apparent rankings need replication and experiment on a larger scale.
 
 ## Run the current code
 
@@ -13,7 +13,7 @@ uv run ken infer --numbers 3 --count 1000 --show 10 --seed 0
 uv run ken diagnose --numbers 3 --count 100 --samples 12 --seed 12345
 ```
 
-Training uses CUDA and raises an error if CUDA is unavailable. Inference and diagnostics automatically use CUDA when available, otherwise CPU. The CLI currently trains for **2,100 SFT steps and 600 RL iterations**, with 64 prompts per iteration, 12 answers per prompt, and up to 48 generated tokens. SFT batch size is 64: 134,400 generated warm-up examples.
+Inference and diagnostics automatically use CUDA when available, otherwise CPU. The CLI currently trains for **2,100 SFT steps and 600 RL iterations**, with 64 prompts per iteration, 12 answers per prompt, and up to 48 generated tokens. SFT batch size is 64: 134,400 generated warm-up examples.
 
 **Configuration details that matter:**
 
@@ -152,18 +152,18 @@ The main empirical pattern was an interaction between reward and anchoring:
 7. RMS objectives learned without clipping, but differentiable versus detached RMS did not show a clear accuracy difference in the runs tried.
 8. Exact vocabulary reference KL produced smoother diagnostics and competitive accuracy; it did not uniformly improve every policy objective.
 
-Selected **historical** greedy evaluations, not a controlled leaderboard:
+### Observed leaderboard
 
-| Configuration | Evaluation seed / count | Accuracy |
-|---|---|---:|
-| Exact-only + KL, 1,600 SFT / 300 RL | 12345 / 100,000 | 31.393% |
-| Exact-only + sampled KL, 2,100 SFT / 600 RL | 0 / 1,000 | 33.7% |
-| RLOO + sampled KL, 2,100 SFT / 600 RL | 0 / 1,000 | 36.2% |
-| Clipped policy + exact reference KL, 2,100 SFT / 600 RL | 0 / 1,000 | 37.1% |
-| RMS + sampled KL | 12345 / 1,000 | 33–35% across tested settings |
-| RMS + exact reference KL | 0 / 1,000 | 30.8% |
+The following rows use **2,100 SFT steps, 600 RL iterations, three-number puzzles, and 1,000 greedy evaluation puzzles**, as reported in the chat. Separate tables keep evaluation seeds matched. These are individual trained checkpoints, not averages across training seeds; historical coefficient changes mean they are observed results rather than a fully controlled algorithm ranking.
 
-Coefficients, SFT lengths, evaluation sets, and other settings changed during development. Do not rank unmatched rows or treat evaluation-seed changes as training replication. Larger evaluation sets refined an estimate around 31–32% for one checkpoint; they did not cause that model to improve. Runs with the same seed and increasing counts contain nested puzzle sets.
+| Rank | Variant | Exact | Wrong result | Disallowed numbers | Invalid expression |
+|---|---|---:|---:|---:|---:|
+| 1 | `grpo_ref_kl` | **37.1% (371)** | 571 | 56 | 2 |
+| 2 | `rloo_kl` | **36.2% (362)** | 586 | 50 | 2 |
+| 3 | `rlvr_kl` | **33.7% (337)** | 592 | 66 | 5 |
+| 4 | `rms_kl`, original | **34.7% (347)** | 565 | 83 | 5 |
+| 5 | `rms_kl`, detached RMS | **34.0% (340)** | 599 | 58 | 3 |
+| 6 | `rms_ref_kl` | **30.8% (308)** | 609 | 78 | 5 |
 
 Other ideas were implemented or discussed during the session but are **not currently registered in this checkout**:
 
@@ -190,18 +190,5 @@ Use a fixed SFT budget, coefficients, rollout budget, and evaluation set when ch
 For a beta/G study, keep completions per iteration and optimizer-update count fixed. With 768 completions, prompts per iteration are 768/G. This controls answer count but necessarily changes distinct prompt count; variable answer lengths also mean token/FLOP budgets are not exactly matched. Start with a small screening grid, then refine promising regions. Boundary optima and tied scores make an inferred power-law slope unreliable.
 
 Remaining weaknesses are primarily operand copying/repetition and operation/order selection, rather than stopping. Measure both before changing another loss. Evaluate target sensitivity with fixed numbers and multiple targets, and distinguish discovery (sampled solution coverage) from concentration (greedy accuracy). Do not infer a hard 40% ceiling from several related objectives sharing the same model and warm-up.
-
-## Files and checks
-
-| File | Purpose |
-|---|---|
-| `src/ken/countdown.py` | Puzzle generation, character encoding, verifier and rewards |
-| `src/ken/grpo_toy.py` | TinyGPT, warm-up, rollout collection, training and greedy inference |
-| `src/ken/rl.py` | RL update variants, objective calculations and metric recording |
-| `src/ken/diagnostics.py` | Sampled coverage, operand usage and target sensitivity |
-| `src/ken/__init__.py` | CLI and plots |
-| `src/ken/test.ipynb` | Step-by-step scratch notebook |
-| `src/ken/grpo_llm.py` | Separate TRL-based larger-model experiment; not the focus of these results |
-
 
 Background reading: [DeepSeekMath](https://arxiv.org/abs/2402.03300), [PPO](https://arxiv.org/abs/1707.06347), and [Schulman's KL estimator note](https://joschu.net/blog/kl-approx.html). The custom variants here are experiments, not claims of novel algorithms or faithful implementations of every detail in those sources.
