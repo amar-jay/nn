@@ -45,6 +45,12 @@
 
 - [x] Scaling laws - Theory
 
+- [x] Reinforcement Learning
+  - [x] Finite Markov Decision Processes / Policy Evaluation
+  - [x] Q-Learning, SARSA, Expected SARSA
+  - [x] Deep Q-Networks (DQN)
+  - [x] Advantage Actor-Critic (A2C)
+
 - [x] Distributed Data Processing
 - [x] Profiling
 - [x] Flash attention
