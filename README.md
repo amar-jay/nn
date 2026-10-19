@@ -50,6 +50,7 @@
   - [x] Q-Learning, SARSA, Expected SARSA
   - [x] Deep Q-Networks (DQN)
   - [x] Advantage Actor-Critic (A2C)
+  - [x] GRPO / RLVR / RLOO experiments (modules/reinforcement_learning/ken)
 
 - [x] Distributed Data Processing
 - [x] Profiling

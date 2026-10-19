@@ -12,3 +12,6 @@ wheels/
 # Training artifacts
 outputs/
 *.pt
+*.pth
+*.npy
+.ipynb_checkpoints/
