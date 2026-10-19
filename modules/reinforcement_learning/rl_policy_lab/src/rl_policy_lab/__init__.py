@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
-from ken.grpo_toy import train, infer
-from ken.rl import METRIC_NAMES, experiments
+from rl_policy_lab.grpo_toy import train, infer
+from rl_policy_lab.rl import METRIC_NAMES, experiments
 
 def show_metrics(metrics):
     if len(metrics) != len(METRIC_NAMES):
@@ -26,7 +26,7 @@ def show_metrics(metrics):
 
 def main() -> None:
     import argparse
-    parser = argparse.ArgumentParser(prog="ken")
+    parser = argparse.ArgumentParser(prog="rl_policy_lab")
     commands = parser.add_subparsers(dest="command", required=True)
     training = commands.add_parser("train")
     training.add_argument("--numbers", type=int, default=3)
@@ -49,7 +49,7 @@ def main() -> None:
                            iters=600,
                            sft_steps=2100))
     elif args.command == "diagnose":
-        from ken.diagnostics import diagnose
+        from rl_policy_lab.diagnostics import diagnose
         diagnose(n_numbers=args.numbers, count=args.count, 
                  samples=args.samples, seed=args.seed)
     else:

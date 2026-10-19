@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from ken.countdown import exact_reward, reward
+from rl_policy_lab.countdown import exact_reward, reward
 
 def _completion_logps(net: torch.nn.Module, seqs: list[list[int]], plens: list[int], pad_tok: int=2,
                       return_distribution=False):

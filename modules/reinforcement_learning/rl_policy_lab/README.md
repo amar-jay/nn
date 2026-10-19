@@ -1,4 +1,4 @@
-# ken
+# RL Policy Lab
 
 Countdown is the test environment, not the research objective. This project uses a small character-level transformer and a verifiable arithmetic task to study how reward design, advantage estimation, normalization, clipping, and regularization change learning. The aim is to make experiments understandable and affordable on a laptop GPU before introducing a larger model or more complicated task.
 
@@ -8,9 +8,9 @@ The results below are observations from our learning sessions, not benchmark cla
 
 ```bash
 uv sync
-uv run ken train --numbers 3 --rl-step grpo_ref_kl
-uv run ken infer --numbers 3 --count 1000 --show 10 --seed 0
-uv run ken diagnose --numbers 3 --count 100 --samples 12 --seed 12345
+uv run rl-policy-lab train --numbers 3 --rl-step grpo_ref_kl
+uv run rl-policy-lab infer --numbers 3 --count 1000 --show 10 --seed 0
+uv run rl-policy-lab diagnose --numbers 3 --count 100 --samples 12 --seed 12345
 ```
 
 Inference and diagnostics automatically use CUDA when available, otherwise CPU. The CLI currently trains for **2,100 SFT steps and 600 RL iterations**, with 64 prompts per iteration, 12 answers per prompt, and up to 48 generated tokens. SFT batch size is 64: 134,400 generated warm-up examples.
@@ -22,7 +22,7 @@ Inference and diagnostics automatically use CUDA when available, otherwise CPU. 
 - Python `train()` defaults differ from CLI settings. For explicit experiments, pass the full configuration:
 
 ```python
-from ken.grpo_toy import train
+from rl_policy_lab.grpo_toy import train
 
 metrics = train(
     n_numbers=3, rl_step="grpo_ref_kl", seed=0,
@@ -30,7 +30,7 @@ metrics = train(
 )
 ```
 
-- Coefficients are currently function parameters in `src/ken/rl.py`, not CLI arguments. The current `rlvr_kl_step` default beta is **0.01**; most other KL variants default to **0.02**. Historical runs may have used earlier defaults. Record the coefficient when comparing runs.
+- Coefficients are currently function parameters in `src/rl_policy_lab/rl.py`, not CLI arguments. The current `rlvr_kl_step` default beta is **0.01**; most other KL variants default to **0.02**. Historical runs may have used earlier defaults. Record the coefficient when comparing runs.
 - Optional before/after diagnostic calls in `train()` are currently commented out. The standalone `diagnose` command is available.
 
 ## Environment and warm-up

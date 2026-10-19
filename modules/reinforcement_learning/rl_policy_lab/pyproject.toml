@@ -1,7 +1,7 @@
 [project]
-name = "ken"
+name = "rl-policy-lab"
 version = "0.1.0"
-description = "Add your description here"
+description = "Experiments with reinforcement learning policy updates and verifiable rewards"
 readme = "README.md"
 authors = [
     { name = "amar-jay", email = "abdelmanan.abdelrahman03@gmail.com" }
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ken = "ken:main"
+rl-policy-lab = "rl_policy_lab:main"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
