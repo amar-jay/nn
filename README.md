@@ -15,6 +15,7 @@
 - [x] Quanitization
 - [x] LoRA Finetuning
 - [-] QLoRA
+- [x] Direct Preference Optimization (DPO)
 
 - [x] Attention
 - [x] Decoder Transformer (GPT)
