@@ -6,12 +6,21 @@ The results below are observations from our learning sessions, not benchmark cla
 
 ## Run the current code
 
+Use the repository's shared Python environment (Python 3.11 or newer).
+The toy experiments require PyTorch and Matplotlib; `grpo_llm.py` additionally
+uses Datasets, PEFT, Transformers, and TRL. There is no separate environment
+or package installation for this folder.
+
+From the repository root:
+
 ```bash
-uv sync
-uv run rl-policy-lab train --numbers 3 --rl-step grpo_ref_kl
-uv run rl-policy-lab infer --numbers 3 --count 1000 --show 10 --seed 0
-uv run rl-policy-lab diagnose --numbers 3 --count 100 --samples 12 --seed 12345
+export PYTHONPATH="$PWD/modules/reinforcement_learning/rl_policy_lab/src${PYTHONPATH:+:$PYTHONPATH}"
+python -m rl_policy_lab train --numbers 3 --rl-step grpo_ref_kl
+python -m rl_policy_lab infer --numbers 3 --count 1000 --show 10 --seed 0
+python -m rl_policy_lab diagnose --numbers 3 --count 100 --samples 12 --seed 12345
 ```
+
+Generated checkpoints and outputs are covered by the root `.gitignore`.
 
 Inference and diagnostics automatically use CUDA when available, otherwise CPU. The CLI currently trains for **2,100 SFT steps and 600 RL iterations**, with 64 prompts per iteration, 12 answers per prompt, and up to 48 generated tokens. SFT batch size is 64: 134,400 generated warm-up examples.
 

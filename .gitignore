@@ -8,3 +8,13 @@ data/*
 *.pth
 *.npy
 __pycache__/
+
+# RL Policy Lab generated files (shared repository rules)
+*.pt
+*.py[oc]
+.ipynb_checkpoints/
+modules/reinforcement_learning/rl_policy_lab/**/outputs/
+modules/reinforcement_learning/rl_policy_lab/**/build/
+modules/reinforcement_learning/rl_policy_lab/**/dist/
+modules/reinforcement_learning/rl_policy_lab/**/wheels/
+modules/reinforcement_learning/rl_policy_lab/**/*.egg-info/

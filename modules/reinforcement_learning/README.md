@@ -9,9 +9,9 @@ authorship, dates, and commit messages are preserved.
 
 ## Contents
 
-- [`rl_policy_lab/`](rl_policy_lab/README.md): a self-contained package for GRPO, RLVR, RLOO,
-  reward design, KL regularization, and Countdown experiments. Its own
-  `pyproject.toml`, lockfile, and CLI remain together; use its README for setup.
+- [`rl_policy_lab/`](rl_policy_lab/README.md): experiments with GRPO, RLVR, RLOO,
+  reward design, KL regularization, and Countdown, using the repository's shared
+  Python environment. See its README for dependencies and module commands.
 - `simple.py`: random-action environment walkthrough.
 - `tabular_methods/`: multi-armed bandit notes, finite Markov decision processes,
   iterative policy evaluation, Q-learning, SARSA, and Expected SARSA.
