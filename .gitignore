@@ -1,18 +1,53 @@
-venv
-!.gitignore
-.*
+# Local Python environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python and notebook caches
+__pycache__/
+*.py[oc]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
 .ipynb_checkpoint
+.ipynb_checkpoints/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.envrc
+.aws/
+.ssh/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local agent state and operating system files
+.codex/
+.agents/
+.DS_Store
+Thumbs.db
+
+# Local datasets
 data/*
 
 # Generated reinforcement learning checkpoints and arrays
 *.pth
 *.npy
-__pycache__/
 
 # RL Policy Lab generated files (shared repository rules)
 *.pt
-*.py[oc]
-.ipynb_checkpoints/
 modules/reinforcement_learning/rl_policy_lab/**/outputs/
 modules/reinforcement_learning/rl_policy_lab/**/build/
 modules/reinforcement_learning/rl_policy_lab/**/dist/
