@@ -6,18 +6,22 @@ The results below are observations from our learning sessions, not benchmark cla
 
 ## Run the current code
 
-Use the repository's shared Python environment (Python 3.11 or newer).
-The toy experiments require PyTorch and Matplotlib; `grpo_llm.py` additionally
-uses Datasets, PEFT, Transformers, and TRL. There is no separate environment
-or package installation for this folder.
+Use the repository's shared uv environment (Python 3.11 or newer).
+The default dependencies cover the toy experiments. For `grpo_llm.py`, include
+the `llm-rl` dependency group.
 
 From the repository root:
 
 ```bash
+uv sync --locked
 export PYTHONPATH="$PWD/modules/reinforcement_learning/rl_policy_lab/src${PYTHONPATH:+:$PYTHONPATH}"
-python -m rl_policy_lab train --numbers 3 --rl-step grpo_ref_kl
-python -m rl_policy_lab infer --numbers 3 --count 1000 --show 10 --seed 0
-python -m rl_policy_lab diagnose --numbers 3 --count 100 --samples 12 --seed 12345
+uv run python -m rl_policy_lab train --numbers 3 --rl-step grpo_ref_kl
+uv run python -m rl_policy_lab infer --numbers 3 --count 1000 --show 10 --seed 0
+uv run python -m rl_policy_lab diagnose --numbers 3 --count 100 --samples 12 --seed 12345
+
+# For the Hugging Face trainer:
+uv sync --locked --group llm-rl
+uv run --group llm-rl python -m rl_policy_lab.grpo_llm --help
 ```
 
 Generated checkpoints and outputs are covered by the root `.gitignore`.

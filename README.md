@@ -1,3 +1,37 @@
+# Neural Network Learning
+
+## Setup
+
+Use Python 3.11 or newer with [uv](https://docs.astral.sh/uv/).
+Run these commands from the repository root:
+
+```bash
+git submodule update --init --recursive
+uv sync --locked
+```
+
+The root `pyproject.toml` and `uv.lock` manage one shared environment for this
+repository's scripts, including the toy RL Policy Lab experiments. The lockfile
+pins dependency versions; `.venv/` and caches are ignored by Git.
+
+```bash
+# Run a Python example
+uv run python modules/layers/convolution/conv2d.py
+
+# Optional notebook tools
+uv sync --locked --group notebooks
+uv run --group notebooks jupyter lab
+
+# Optional Hugging Face RL training dependencies
+uv sync --locked --group llm-rl
+```
+
+Submodules retain their upstream dependency definitions; the root environment
+does not combine every external model project's requirements. The legacy
+`_other/torrent_to_GDrive.ipynb` helper requires Google Colab and its own setup.
+
+## Topics
+
 ```
 - [x] MLP
 - [x] Token Embedding

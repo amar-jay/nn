@@ -1,0 +1,32 @@
+[project]
+name = "nn-learning"
+version = "0.1.0"
+description = "Neural network implementations and learning experiments"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "einops",
+    "ftfy",
+    "gymnasium[classic-control,toy-text]",
+    "lightning",
+    "matplotlib",
+    "numpy",
+    "pillow",
+    "regex",
+    "requests",
+    "scipy",
+    "seaborn",
+    "tiktoken",
+    "torch>=2.6",
+    "torchvision",
+    "tqdm",
+    "transformers>=4.56",
+    "typing-extensions",
+]
+
+[dependency-groups]
+notebooks = ["ipykernel", "ipywidgets", "jupyterlab"]
+llm-rl = ["accelerate", "datasets", "peft", "trl>=0.20"]
+
+[tool.uv]
+package = false
