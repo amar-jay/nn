@@ -57,7 +57,7 @@ def evaluate_model(net, count=100, n_numbers=3, samples=12, seed=12345,
     stochastic completions, not a greedy or best-answer selection score.
     allowed_numbers checks operands independently of arithmetic syntax.
     """
-    from .grpo_toy import sample
+    from .model_toy import sample
 
     if count < 1 or samples < 1 or n_numbers < 2 or max_new < 1 or target_sets < 0:
         raise ValueError("positive count/samples/max_new, numbers >= 2, target_sets >= 0 required")
@@ -126,7 +126,7 @@ def print_report(report):
 
 
 def diagnose(model_path='grpo_toy.pt', device=None, **kwargs):
-    from .grpo_toy import TinyGPT
+    from .model_toy import TinyGPT
     net = TinyGPT().to(device or ('cuda' if torch.cuda.is_available() else 'cpu'))
     net.load_state_dict(torch.load(model_path, map_location=next(net.parameters()).device,
                                    weights_only=True))

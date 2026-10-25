@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from rl_policy_lab.grpo_toy import train, infer
+from rl_policy_lab.model_toy import train, infer
 from rl_policy_lab.rl import METRIC_NAMES, experiments
 
 def show_metrics(metrics):

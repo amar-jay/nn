@@ -7,7 +7,7 @@ The results below are observations from our learning sessions, not benchmark cla
 ## Run the current code
 
 Use the repository's shared uv environment (Python 3.11 or newer).
-The default dependencies cover the toy experiments. For `grpo_llm.py`, include
+The default dependencies cover the toy experiments. For `model_llm.py`, include
 the `llm-rl` dependency group.
 
 From the repository root:
@@ -21,7 +21,7 @@ uv run python -m rl_policy_lab diagnose --numbers 3 --count 100 --samples 12 --s
 
 # For the Hugging Face trainer:
 uv sync --locked --group llm-rl
-uv run --group llm-rl python -m rl_policy_lab.grpo_llm --help
+uv run --group llm-rl python -m rl_policy_lab.model_llm --help
 ```
 
 Generated checkpoints and outputs are covered by the root `.gitignore`.
@@ -35,7 +35,7 @@ Inference and diagnostics automatically use CUDA when available, otherwise CPU. 
 - Python `train()` defaults differ from CLI settings. For explicit experiments, pass the full configuration:
 
 ```python
-from rl_policy_lab.grpo_toy import train
+from rl_policy_lab.model_toy import train
 
 metrics = train(
     n_numbers=3, rl_step="grpo_ref_kl", seed=0,
